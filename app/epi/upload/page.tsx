@@ -8,7 +8,7 @@ export default function UploadPage() {
   const [msg, setMsg] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [preview, setPreview] = useState<any[]>([])
+  const [preview, setPreview] = useState<Record<string, string | number>[]>([])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,8 +23,8 @@ export default function UploadPage() {
     const data = await file.arrayBuffer()
     const workbook = XLSX.read(data)
     const sheet = workbook.Sheets['organizar'] || workbook.Sheets['ORGANIZAR']
-    const json = XLSX.utils.sheet_to_json(sheet)
-    setPreview(json as any[])
+    const json = XLSX.utils.sheet_to_json<Record<string, string | number>>(sheet)
+    setPreview(json)
 
     const formData = new FormData()
     formData.append('file', file)

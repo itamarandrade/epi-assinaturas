@@ -116,7 +116,7 @@ export default function HomeDashboard() {
   )
 }
 
-function CardGrafico({ titulo, dados }: { titulo: string; dados: any[] }) {
+function CardGrafico({ titulo, dados }: { titulo: string; dados: { name: string; value: number }[] }) {
   return (
     <div className="bg-white rounded shadow p-4">
       <h2 className="text-lg font-semibold mb-2">{titulo}</h2>
