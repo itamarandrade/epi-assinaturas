@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as XLSX from 'xlsx'
 
+interface RawRow {
+  [key: string]: string | undefined
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY! // chave de serviço para backend
@@ -19,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   if (!sheet) return NextResponse.json({ error: 'Aba "organizar" não encontrada' }, { status: 400 })
 
-  const json = XLSX.utils.sheet_to_json(sheet) as any[]
+  const json = XLSX.utils.sheet_to_json<RawRow>(sheet)
 
   const registros = json.map(row => ({
     nome: row['nome']?.trim() || '',

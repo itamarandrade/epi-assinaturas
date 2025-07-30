@@ -7,8 +7,15 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
+interface Registro {
+  nome: string
+  status: string
+  loja: string
+  consultor: string
+}
+
 export default function Dashboard() {
-  const [dados, setDados] = useState<any[]>([])
+  const [dados, setDados] = useState<Registro[]>([])
   const [filtros, setFiltros] = useState({ status: '', loja: '', consultor: '' })
   const router = useRouter()
 
