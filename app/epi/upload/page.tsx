@@ -44,7 +44,8 @@ export default function UploadPage() {
       setMsg('A aba "organizar" não foi encontrada na planilha.')
       return
     }
-    const rows: any[] = XLSX.utils.sheet_to_json(sheet)
+    type Row = Record<string, string | number | boolean | Date | null>
+    const rows = XLSX.utils.sheet_to_json<Row>(sheet)
     const map = new Map<string, ColaboradorRecord>()
     rows.forEach(r => {
       const nome = (r['Colaborador'] || '').toString().trim()
@@ -60,7 +61,11 @@ export default function UploadPage() {
         nome_epi: (r['EPI'] || '').toString().trim(),
         status_epi: (r['Status EPI'] || '').toString().trim(),
         status: (r['Status Geral'] || '').toString().trim(),
-        proximo_fornecimento: r['Próximo Fornecimento'] ? new Date(r['Próximo Fornecimento']).toLocaleDateString() : null,
+        proximo_fornecimento: r['Próximo Fornecimento']
+          ? new Date(
+              r['Próximo Fornecimento'] as string | number | Date
+            ).toLocaleDateString()
+          : null,
         mes_fornecimento: (r['Mês'] || '').toString().trim(),
       })
     })

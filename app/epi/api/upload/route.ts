@@ -10,7 +10,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-function parseDate(v: any): string | null {
+function parseDate(v: string | number | Date | null | undefined): string | null {
   if (!v) return null
   if (v instanceof Date) {
     return isNaN(v.getTime()) ? null : v.toISOString().split('T')[0]
@@ -102,7 +102,8 @@ export async function POST(req: NextRequest) {
   delete sheet['!merges']
 
   // 8️⃣ converter em JSON já com defval null
-  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+  type Row = Record<string, string | number | boolean | Date | null>
+  const rows = XLSX.utils.sheet_to_json<Row>(sheet, {
     raw: true,
     defval: null,
     
@@ -114,19 +115,19 @@ export async function POST(req: NextRequest) {
   // 9️⃣ “Fill down” em campos mesclados restantes
   let lastNome = '', lastLoja = '', lastConsultor = '', lastCargo = '', lastMes = ''
   rows.forEach(r => {
-    if (r['Colaborador'])            lastNome = r['Colaborador']
+    if (r['Colaborador'])            lastNome = String(r['Colaborador'])
     else                              r['Colaborador'] = lastNome
 
-    if (r['Sigla'])                  lastLoja = r['Sigla']
+    if (r['Sigla'])                  lastLoja = String(r['Sigla'])
     else                              r['Sigla'] = lastLoja
 
-    if (r['Consultor de Operações']) lastConsultor = r['Consultor de Operações']
+    if (r['Consultor de Operações']) lastConsultor = String(r['Consultor de Operações'])
     else                              r['Consultor de Operações'] = lastConsultor
 
-    if (r['Cargo'])                  lastCargo = r['Cargo']
+    if (r['Cargo'])                  lastCargo = String(r['Cargo'])
     else                              r['Cargo'] = lastCargo
 
-    if (r['Mês'])                    lastMes = r['Mês']
+    if (r['Mês'])                    lastMes = String(r['Mês'])
     else                              r['Mês'] = lastMes
   })
 
@@ -171,7 +172,9 @@ export async function POST(req: NextRequest) {
       nome_epi: String(r['EPI'] || '').trim(),
       status_epi: String(r['Status EPI'] || '').trim(),
       status: String(r['Status Geral'] || r['Status'] || '').trim() || 'EM DIA',
-      proximo_fornecimento: parseDate(r['Próximo Fornecimento']),
+      proximo_fornecimento: parseDate(
+        r['Próximo Fornecimento'] as string | number | Date | null | undefined
+      ),
       mes_fornecimento: String(r['Mês']).trim(),
     })
   })
