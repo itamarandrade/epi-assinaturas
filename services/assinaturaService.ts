@@ -4,14 +4,14 @@ export async function getResumoEpis() {
   const { data, error } = await supabase.from('assinaturas_epi').select('*')
   if (error) throw error
 
-  // Gráfico de status
+  // Gráfico de status geral
   const grafico = [
     { name: 'Em Dia', value: data.filter(d => d.status === 'EM DIA').length },
     { name: 'Pendentes', value: data.filter(d => d.status === 'PENDENTE').length },
     { name: 'Vencidos', value: data.filter(d => d.status === 'VENCIDO').length },
   ]
 
-  // Ranking de lojas com problemas
+  // Ranking de lojas com mais problemas (pendentes + vencidos)
   const rankingMap: Record<string, number> = {}
   data.forEach(({ loja, status }) => {
     if (status !== 'EM DIA') {
