@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { createSupabase } from '@/lib/supabase'
 
 /**
  * Tipo para dados do gráfico de status geral de EPIs
@@ -42,6 +42,7 @@ export async function getResumoEpis(loja?: string|null, consultor?: string|null)
   ranking: RankingLoja[]
   resumo: RankingConsultor[]
 }> {
+  const supabase = createSupabase()
   let query = supabase.from('assinaturas_epi').select('*')
   if (loja)      query = query.eq('loja', loja)
   if (consultor) query = query.eq('consultor', consultor)
@@ -90,6 +91,7 @@ export async function getResumoEpis(loja?: string|null, consultor?: string|null)
 export async function getDetalhePorConsultor(
   consultor: string
 ): Promise<DetalheLoja[]> {
+  const supabase = createSupabase()
   const { data, error } = await supabase
     .from('assinaturas_epi')
     .select('loja, epis')
