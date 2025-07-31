@@ -1,118 +1,155 @@
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase';
 
-/**
- * Tipo para dados do gráfico de status geral de EPIs
- */
-export type GraficoData = { name: string; value: number }
-
-/**
- * Tipo para ranking de lojas com problemas
- */
-export type RankingLoja = { loja: string; problemas: number }
-
-/**
- * Tipo para resumo por consultor
- */
+export type GraficoData = { name: string; value: number };
+export type RankingLoja = { loja: string; problemas: number };
 export type RankingConsultor = {
-  consultor: string
-  emDia: number
-  pendente: number
-  vencido: number
-}
-
-/**
- * Tipo para detalhamento por loja de um consultor
- */
+  consultor: string;
+  emDia: number;
+  pendente: number;
+  vencido: number;
+};
 export type DetalheLoja = {
-  loja: string
-  emDia: number
-  pendente: number
-  vencido: number
+  loja: string;
+  emDia: number;
+  pendente: number;
+  vencido: number;
+};
+
+interface Filters { loja?: string; consultor?: string }
+
+/** Helpers para aplicar filtros dinamicamente */
+function applyFilters<Q>(query: Q, filters: Filters): Q {
+  if (filters.loja)      (query as any).eq('loja', filters.loja);
+  if (filters.consultor) (query as any).eq('consultor', filters.consultor);
+  return query;
 }
 
-/**
- * Retorna dados agregados de EPIs:
- * - grafico: distribui "Em Dia", "Pendentes", "Vencidos"
- * - ranking: top lojas com problemas (pendentes + vencidos)
- * - resumo: por consultor com contagem de cada status
- */
-export async function getResumoEpis(loja?: string|null, consultor?: string|null): Promise<{
-  
-  grafico: GraficoData[]
-  ranking: RankingLoja[]
-  resumo: RankingConsultor[]
-}> {
-  let query = supabase.from('assinaturas_epi').select('*')
-  if (loja)      query = query.eq('loja', loja)
-  if (consultor) query = query.eq('consultor', consultor)
-  const { data, error } = await supabase.from('assinaturas_epi').select('*')
-  if (error) throw error
-
-  // Gráfico de status geral
-  const grafico: GraficoData[] = [
-    { name: 'Em Dia',   value: data.filter(d => d.status === 'EM DIA').length },
-    { name: 'Pendentes', value: data.filter(d => d.status === 'PENDENTE').length },
-    { name: 'Vencidos',  value: data.filter(d => d.status === 'VENCIDO').length },
-  ]
-
-  // Ranking de lojas com mais problemas (pendentes + vencidos)
-  const rankingMap: Record<string, number> = {}
-  data.forEach(({ loja, status }) => {
-    if (status !== 'EM DIA') {
-      rankingMap[loja] = (rankingMap[loja] || 0) + 1
-    }
-  })
-  const ranking: RankingLoja[] = Object.entries(rankingMap)
-    .map(([loja, problemas]) => ({ loja, problemas }))
-    .sort((a, b) => b.problemas - a.problemas)
-
-  // Resumo por consultor
-  const resumoMap: Record<string, { emDia: number; pendente: number; vencido: number }> = {}
-  data.forEach(({ consultor, status }) => {
-    if (!resumoMap[consultor]) {
-      resumoMap[consultor] = { emDia: 0, pendente: 0, vencido: 0 }
-    }
-    if (status === 'EM DIA')    resumoMap[consultor].emDia++
-    if (status === 'PENDENTE') resumoMap[consultor].pendente++
-    if (status === 'VENCIDO')  resumoMap[consultor].vencido++
-  })
-  const resumo: RankingConsultor[] = Object.entries(resumoMap)
-    .map(([consultor, valores]) => ({ consultor, ...valores }))
-    .sort((a, b) => (b.pendente + b.vencido) - (a.pendente + a.vencido))
-
-  return { grafico, ranking, resumo }
-}
-
-/**
- * Retorna o detalhamento por loja de um consultor específico:
- * cada item contém o total de EPIs "Em Dia", "Pendente" e "Vencido" na loja
- */
-export async function getDetalhePorConsultor(
+export async function getDetalhePorConsultorColaboradores(
   consultor: string
 ): Promise<DetalheLoja[]> {
   const { data, error } = await supabase
     .from('assinaturas_epi')
-    .select('loja, epis')
-    .eq('consultor', consultor)
-  if (error) throw error
+    .select('nome, status, loja')
+    .eq('consultor', consultor);
 
-  // Agrupa por loja
-  const map: Record<string, { emDia: number; pendente: number; vencido: number }> = {}
-  data.forEach(row => {
-    const loja = String(row.loja)
-    if (!map[loja]) {
-      map[loja] = { emDia: 0, pendente: 0, vencido: 0 }
-    }
-    ;(row.epis as any[]).forEach(e => {
-      const status = String(e.status).toUpperCase()
-      if (status === 'EM DIA')     map[loja].emDia++
-      else if (status === 'PENDENTE') map[loja].pendente++
-      else if (status === 'VENCIDO')  map[loja].vencido++
-    })
-  })
+  if (error) throw error;
 
-  // Converte em array ordenado por total de problemas (pendentes + vencidos)
-  return Object.entries(map)
-    .map(([loja, cnt]) => ({ loja, ...cnt }))
-    .sort((a, b) => (b.pendente + b.vencido) - (a.pendente + a.vencido))
+  const únicos = Array.from(
+    data.reduce((map, row) => {
+      const key = `${row.nome}::${row.status}::${row.loja}`;
+      if (!map.has(key)) map.set(key, row);
+      return map;
+    }, new Map<string, typeof data[number]>()).values()
+  );
+
+  const resumo = únicos.reduce((acc, { loja, status }) => {
+    if (!acc[loja]) acc[loja] = { emDia: 0, pendente: 0, vencido: 0 };
+    if (status === 'EM DIA')   acc[loja].emDia++;
+    if (status === 'PENDENTE') acc[loja].pendente++;
+    if (status === 'VENCIDO')  acc[loja].vencido++;
+    return acc;
+  }, {} as Record<string, { emDia: number; pendente: number; vencido: number }>);
+
+  return Object.entries(resumo).map(([loja, vals]) => ({
+    loja,
+    ...vals,
+  }));
+}
+
+/** Colaboradores distintos por status, opcionalmente filtrados */
+export async function getResumoColaboradores(
+  filters: Filters = {}
+): Promise<GraficoData[]> {
+  let q = supabase
+    .from('assinaturas_epi')
+    .select('nome, status, loja, consultor');
+  q = applyFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  // 1 registro por nome+status
+  const únicos = Array.from(
+    data.reduce((m, r) => {
+      const key = `${r.nome}::${r.status}`;
+      if (!m.has(key)) m.set(key, r);
+      return m;
+    }, new Map<string, typeof data[0]>()).values()
+  );
+
+  const total = únicos.length;
+  const agrupado = únicos.reduce((acc, { status }) => {
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return Object.entries(agrupado).map(([name, value]) => ({
+    name,
+    value,
+  }));
+}
+
+/** Ranking de lojas — apenas PENDENTE/VENCIDO — opcionalmente filtrado por consultor */
+export async function getRankingLojaColaboradores(
+  filters: Filters = {}
+): Promise<RankingLoja[]> {
+  let q = supabase
+    .from('assinaturas_epi')
+    .select('nome, status, loja');
+  q = applyFilters(q, filters);
+  q = (q as any).in('status', ['PENDENTE', 'VENCIDO']);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const únicos = Array.from(
+    data.reduce((m, r) => {
+      const key = `${r.nome}::${r.loja}`;
+      if (!m.has(key)) m.set(key, r);
+      return m;
+    }, new Map<string, typeof data[0]>()).values()
+  );
+
+  const cnt = únicos.reduce((acc, { loja }) => {
+    acc[loja] = (acc[loja] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return Object.entries(cnt)
+    .map(([loja, problemas]) => ({ loja, problemas }))
+    .sort((a, b) => b.problemas - a.problemas);
+}
+
+/** Resumo por consultor — opcional filtro por loja */
+export async function getResumoPorConsultorColaboradores(
+  filters: Filters = {}
+): Promise<RankingConsultor[]> {
+  let q = supabase
+    .from('assinaturas_epi')
+    .select('nome, consultor, status, loja');
+  q = applyFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+
+  const únicos = Array.from(
+    data.reduce((m, r) => {
+      const key = `${r.nome}::${r.consultor}::${r.status}`;
+      if (!m.has(key)) m.set(key, r);
+      return m;
+    }, new Map<string, typeof data[0]>()).values()
+  );
+
+  const resumo = únicos.reduce((acc, { consultor, status }) => {
+    if (!acc[consultor]) acc[consultor] = { emDia: 0, pendente: 0, vencido: 0 };
+    if (status === 'EM DIA')   acc[consultor].emDia++;
+    if (status === 'PENDENTE') acc[consultor].pendente++;
+    if (status === 'VENCIDO')  acc[consultor].vencido++;
+    return acc;
+  }, {} as Record<string, { emDia: number; pendente: number; vencido: number }>);
+
+  return Object.entries(resumo).map(([consultor, vals]) => ({
+    consultor,
+    ...vals,
+  }));
 }
