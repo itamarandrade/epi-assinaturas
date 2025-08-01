@@ -5,11 +5,6 @@ import { SSF } from 'xlsx'
 import path from 'path'
 import { mkdir, writeFile, access, readFile } from 'fs/promises'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 function parseDate(v: string | number | Date | null | undefined): string | null {
   if (!v) return null
   if (v instanceof Date) {
@@ -41,6 +36,10 @@ function sanitizeFilename(name: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
   // 1️⃣ obter o arquivo
   const form = await req.formData()
   const file = form.get('file') as File

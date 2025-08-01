@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createSupabase } from '@/lib/supabase'
 import { format, addMonths } from 'date-fns'
 import Link from 'next/link'
 import {
@@ -43,6 +43,7 @@ export default function EpiDashboard() {
   }, [filtros])
 
   async function fetchData() {
+    const supabase = createSupabase()
     let q = supabase.from('assinaturas_epi').select('*')
     if (filtros.loja)        q = q.eq('loja', filtros.loja)
     if (filtros.consultor)   q = q.eq('consultor', filtros.consultor)

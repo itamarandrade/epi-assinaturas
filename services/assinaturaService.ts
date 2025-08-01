@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { createSupabase } from '@/lib/supabase';
 
 export type GraficoData = { name: string; value: number };
 export type RankingLoja = { loja: string; problemas: number };
@@ -27,6 +27,7 @@ function applyFilters<Q>(query: Q, filters: Filters): Q {
 export async function getDetalhePorConsultorColaboradores(
   consultor: string
 ): Promise<DetalheLoja[]> {
+  const supabase = createSupabase();
   const { data, error } = await supabase
     .from('assinaturas_epi')
     .select('nome, status, loja')
@@ -60,6 +61,7 @@ export async function getDetalhePorConsultorColaboradores(
 export async function getResumoColaboradores(
   filters: Filters = {}
 ): Promise<GraficoData[]> {
+  const supabase = createSupabase();
   let q = supabase
     .from('assinaturas_epi')
     .select('nome, status, loja, consultor');
@@ -93,6 +95,7 @@ export async function getResumoColaboradores(
 export async function getRankingLojaColaboradores(
   filters: Filters = {}
 ): Promise<RankingLoja[]> {
+  const supabase = createSupabase();
   let q = supabase
     .from('assinaturas_epi')
     .select('nome, status, loja');
@@ -124,6 +127,7 @@ export async function getRankingLojaColaboradores(
 export async function getResumoPorConsultorColaboradores(
   filters: Filters = {}
 ): Promise<RankingConsultor[]> {
+  const supabase = createSupabase();
   let q = supabase
     .from('assinaturas_epi')
     .select('nome, consultor, status, loja');

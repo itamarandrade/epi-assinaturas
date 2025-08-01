@@ -8,12 +8,11 @@ interface RawRow {
   [key: string]: string | undefined
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // chave de serviço para backend
-)
-
 export async function POST(req: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
   const formData = await req.formData()
   const file = formData.get('file') as File
 
