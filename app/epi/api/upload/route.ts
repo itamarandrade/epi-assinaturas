@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import * as XLSX from 'xlsx'
-import { SSF } from 'xlsx'
-import path from 'path'
-import { mkdir, writeFile, access, readFile } from 'fs/promises'
+import { NextResponse } from 'next/server';
+import * as XLSX from 'xlsx';
+import { supabaseAdmin } from '@/lib/supabase';
+import { ensureStatusKind } from '@/services/statusService';
+import { ensureEpi } from '@/services/epiCatalogService';
+import { upsertColaborador, findColaboradorId } from '@/services/colaboradorService';
+import { upsertColaboradorEpi } from '@/services/colaboradorEpiService';
 
+<<<<<<< HEAD
 function parseDate(v: string | number | Date | null | undefined): string | null {
   if (!v) return null
   if (v instanceof Date) {
@@ -25,16 +27,48 @@ function parseDate(v: string | number | Date | null | undefined): string | null 
   }
   const d = new Date(v)
   return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
+=======
+type Row = Record<string, any>;
+
+// cabeçalhos flexíveis (alias -> campo interno)
+const HEADERS = {
+  nome: ['Colaborador'],                   // nome do funcionário (mesclado)
+  epi_nome: ['EPI'],                       // nome do equipamento
+  status_geral: ['Status Geral'],          // status do colaborador
+  proximo_fornecimento: ['Próximo Fornecimento'],
+  mes_proximo: ['Mês Próximo Fornecimento'],
+  epi_status: ['Status EPI'],              // status do EPI
+  consultor: ['Consultor de Operações'],   // consultor
+  loja: ['Sigla'],                         // loja
+  cargo: ['Cargo'],                        // cargo (opcional)
+};
+
+function pick(row: Record<string, any>, keys: string[]) {
+  for (const k of keys) if (row[k] != null && row[k] !== '') return String(row[k]);
+  return '';
+>>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 }
 
-function sanitizeFilename(name: string) {
-  return name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9._-]/g, '')
+function toISODate(v: any): string | null {
+  if (!v) return null;
+  if (v instanceof Date && !isNaN(v as any)) {
+    return v.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  if (!s) return null;
+  // tenta dd/mm/yyyy
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    const d = Number(m[1]), mo = Number(m[2]) - 1, y = Number(m[3].length === 2 ? '20'+m[3] : m[3]);
+    const dt = new Date(Date.UTC(y, mo, d));
+    return isNaN(dt.getTime()) ? null : dt.toISOString().slice(0,10);
+  }
+  // tenta yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
 }
 
+<<<<<<< HEAD
 export async function POST(req: NextRequest) {
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,162 +79,170 @@ export async function POST(req: NextRequest) {
   const file = form.get('file') as File
   if (!file) {
     return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 })
+=======
+function firstDayFromMonthText(v: any): string | null {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  // aceita 'YYYY-MM', 'MM/YYYY', 'MMM/YYYY'
+  if (/^\d{4}-\d{2}$/.test(s)) return `${s}-01`;
+  const m1 = s.match(/^(\d{1,2})[\/\-](\d{4})$/);
+  if (m1) {
+    const mo = ('0' + m1[1]).slice(0,2);
+    return `${m1[2]}-${mo.padStart(2,'0')}-01`;
+>>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
   }
+  // abreviações PT-BR (jan, fev, mar, abr, mai, jun, jul, ago, set, out, nov, dez)
+  const map: Record<string,string> = {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'};
+  const m2 = s.toLowerCase().match(/^([a-zç]{3})[\/\s\-](\d{4})$/);
+  if (m2 && map[m2[1]]) return `${m2[2]}-${map[m2[1]]}-01`;
+  return null;
+}
 
-  // 2️⃣ preparar pasta e nome seguro
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-  await mkdir(uploadDir, { recursive: true })
-  const safeName = sanitizeFilename(file.name)
-  const filename = `${Date.now()}_${safeName}`
-  const uploadPath = path.join(uploadDir, filename)
-
-  // 3️⃣ salvar o buffer em disco
-  const buffer = Buffer.from(await file.arrayBuffer())
-  await writeFile(uploadPath, buffer)
-
-  // 4️⃣ verificar se o arquivo foi salvo
+export async function POST(req: Request) {
   try {
-    await access(uploadPath)
-    console.log('✅ Arquivo salvo em disco:', uploadPath)
-  } catch (err) {
-    console.error('❌ Não foi possível acessar o arquivo salvo:', uploadPath, err)
-    return NextResponse.json({ error: 'Falha ao acessar o arquivo em disco' }, { status: 500 })
-  }
+    const form = await req.formData();
+    const file = form.get('file') as File | null;
+    if (!file) return NextResponse.json({ error: 'Arquivo não enviado (file)' }, { status: 400 });
 
-  // 5️⃣ ler o arquivo do disco como buffer
-  const fileBuffer = await readFile(uploadPath)
+    // cria job
+    const jobIns = await supabaseAdmin.from('import_job')
+      .insert({ filename: file.name, status: 'running' })
+      .select('id')
+      .single();
+    if (jobIns.error) throw jobIns.error;
+    const jobId = jobIns.data.id as number;
 
-  // 6️⃣ parse do Excel
-  const wb = XLSX.read(fileBuffer, {
-    type: 'buffer',
-    cellDates: true,
-    dateNF: 'yyyy-mm-dd'
-  })
-  const sheetName = wb.SheetNames.find(n => ['organizar','ORGANIZAR'].includes(n)) 
-                     || wb.SheetNames[0]
-  const sheet = wb.Sheets[sheetName]
-  if (!sheet) {
-    return NextResponse.json({ error: `Aba "${sheetName}" não encontrada` }, { status: 400 })
-  }
+    // lê workbook
+    const arrayBuffer = await file.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Row>(ws, { defval: '' });
 
-  // 7️⃣ “Desmesclar” e propagar valores de merges
-  const merges = sheet['!merges'] || []
-  merges.forEach(merge => {
-    const startAddr = XLSX.utils.encode_cell(merge.s)
-    const value = sheet[startAddr]?.v
-    for (let R = merge.s.r; R <= merge.e.r; ++R) {
-      for (let C = merge.s.c; C <= merge.e.c; ++C) {
-        const addr = XLSX.utils.encode_cell({ r: R, c: C })
-        if (!sheet[addr]) {
-          sheet[addr] = { t: 's', v: value }
-        }
-      }
-    }
-  })
-  // opcional: evita que o sheet_to_json gere erros com merges
-  delete sheet['!merges']
+    // salva total
+    await supabaseAdmin.from('import_job').update({ total_rows: rows.length }).eq('id', jobId);
 
-  // 8️⃣ converter em JSON já com defval null
-  type Row = Record<string, string | number | boolean | Date | null>
-  const rows = XLSX.utils.sheet_to_json<Row>(sheet, {
-    raw: true,
-    defval: null,
+    let ok = 0, err = 0, processed = 0;
+
     
-  })
-  if (!rows.length) {
-    return NextResponse.json({ error: 'Planilha sem dados' }, { status: 400 })
+
+// valores carregados do último não-vazio (forward-fill)
+let carryNome = '';
+let carryStatusGeral = '';
+let carryConsultor = '';
+let carryLoja = '';
+let carryCargo = '';
+
+for (let i = 0; i < rows.length; i++) {
+  const r = rows[i];
+  processed++;
+
+  // pega valores da linha
+  let nome    = pick(r, HEADERS.nome);
+  let loja    = pick(r, HEADERS.loja);
+  let consultor = pick(r, HEADERS.consultor);
+  let cargo   = pick(r, HEADERS.cargo);
+  let statusGeralRaw = pick(r, HEADERS.status_geral);
+
+  const epiNome = pick(r, HEADERS.epi_nome);
+  const epiStatusRaw = pick(r, HEADERS.epi_status);
+  const proxStr = pick(r, HEADERS.proximo_fornecimento);
+  const mesStr  = pick(r, HEADERS.mes_proximo);
+
+  // FORWARD-FILL: se veio vazio, usa o último
+  if (!nome)        nome = carryNome;
+  else              carryNome = nome;
+
+  if (!statusGeralRaw) statusGeralRaw = carryStatusGeral;
+  else                 carryStatusGeral = statusGeralRaw;
+
+  if (!consultor)   consultor = carryConsultor;
+  else              carryConsultor = consultor;
+
+  if (!loja)        loja = carryLoja;
+  else              carryLoja = loja;
+
+  if (!cargo)       cargo = carryCargo;
+  else              carryCargo = cargo;
+
+  // datas
+  let proximo = toISODate(proxStr);
+  if (!proximo) {
+    const firstDay = firstDayFromMonthText(mesStr);
+    if (firstDay) proximo = firstDay;
   }
 
-  // 9️⃣ “Fill down” em campos mesclados restantes
-  let lastNome = '', lastLoja = '', lastConsultor = '', lastCargo = '', lastMes = ''
-  rows.forEach(r => {
-    if (r['Colaborador'])            lastNome = String(r['Colaborador'])
-    else                              r['Colaborador'] = lastNome
-
-    if (r['Sigla'])                  lastLoja = String(r['Sigla'])
-    else                              r['Sigla'] = lastLoja
-
-    if (r['Consultor de Operações']) lastConsultor = String(r['Consultor de Operações'])
-    else                              r['Consultor de Operações'] = lastConsultor
-
-    if (r['Cargo'])                  lastCargo = String(r['Cargo'])
-    else                              r['Cargo'] = lastCargo
-
-    if (r['Mês'])                    lastMes = String(r['Mês'])
-    else                              r['Mês'] = lastMes
-  })
-
-  // 10️⃣ valida campos obrigatórios
-  const faltam = rows.some(r =>
-    !r['Colaborador'] || !r['Sigla'] || !r['EPI']
-  )
-  if (faltam) {
-    return NextResponse.json({
-      error: 'Existem linhas sem Colaborador, Sigla ou EPI.'
-    }, { status: 400 })
+  // valida mínimo (nome pode estar vindo só por carry)
+  if (!nome || !epiNome || !epiStatusRaw) {
+    err++;
+    await supabaseAdmin.from('import_item').insert({
+      job_id: jobId, row_number: i+1, status: 'error',
+      message: 'Campos obrigatórios ausentes (Colaborador, EPI, Status EPI)',
+      colaborador: nome || '', loja, consultor,
+      epi_nome: epiNome || '', epi_status_raw: epiStatusRaw || '',
+      status_geral_raw: statusGeralRaw || ''
+    });
+    await supabaseAdmin.from('import_job').update({ processed, ok_count: ok, error_count: err }).eq('id', jobId);
+    continue;
   }
 
-  // 11️⃣ agrupa EPIs por colaborador
-  type Epi = {
-    nome_epi: string
-    status_epi: string
-    status: string
-    proximo_fornecimento: string | null
-    mes_fornecimento: string
-  }
-  type ColabRaw = {
-    nome: string
-    cargo: string
-    loja: string
-    consultor: string
-    epis: Epi[]
-  }
-  const mapa = new Map<string, ColabRaw>()
-  rows.forEach(r => {
-    const nome      = String(r['Colaborador']).trim()
-    const loja      = String(r['Sigla']).trim()
-    const consultor = String(r['Consultor de Operações'] || '').trim()
-    const cargo     = String(r['Cargo'] || '').trim()
-    const key       = `${nome}|${loja}|${consultor}`
+  try {
+    const statusGeralId = statusGeralRaw ? await ensureStatusKind('geral', statusGeralRaw) : null;
+    const statusEpiId   = await ensureStatusKind('epi', epiStatusRaw);
 
-    if (!mapa.has(key)) {
-      mapa.set(key, { nome, cargo, loja, consultor, epis: [] })
+    // tenta achar colaborador; se não existir, cria
+    let colabId = await findColaboradorId(nome, loja || null, consultor || null);
+    if (!colabId) {
+      colabId = await upsertColaborador({
+        nome, loja, consultor,
+        status_geral_id: statusGeralId,
+        data_status: proximo ? proximo : null, // se quiser outra coluna de data status, troque aqui
+        data_admissao: null
+      });
+    } else if (statusGeralId) {
+      await supabaseAdmin.from('colaborador')
+        .update({ status_geral_id: statusGeralId })
+        .eq('id', colabId);
     }
 
-    mapa.get(key)!.epis.push({
-      nome_epi: String(r['EPI'] || '').trim(),
-      status_epi: String(r['Status EPI'] || '').trim(),
-      status: String(r['Status Geral'] || r['Status'] || '').trim() || 'EM DIA',
-      proximo_fornecimento: parseDate(
-        r['Próximo Fornecimento'] as string | number | Date | null | undefined
-      ),
-      mes_fornecimento: String(r['Mês']).trim(),
-    })
-  })
+    const epiId = await ensureEpi(epiNome);
 
-  // 12️⃣ adiciona status agregado
-  const colaboradores = Array.from(mapa.values()).map(col => {
-    const s = col.epis.map(e => e.status.toUpperCase())
-    const status = s.includes('VENCIDO')
-      ? 'VENCIDO'
-      : s.includes('PENDENTE')
-        ? 'PENDENTE'
-        : 'EM DIA'
-    return { ...col, status }
-  })
+    await upsertColaboradorEpi({
+      colaborador_id: colabId!,
+      epi_id: epiId,
+      status_epi_id: statusEpiId,
+      proximo_fornecimento: proximo
+    });
 
-  // 13️⃣ upsert no Supabase
-  const { error } = await supabase
-    .from('assinaturas_epi')
-    .upsert(colaboradores, { onConflict: 'nome,loja,consultor' })
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    ok++;
+    await supabaseAdmin.from('import_item').insert({
+      job_id: jobId, row_number: i+1, status: 'ok',
+      colaborador: nome, loja, consultor,
+      epi_nome: epiNome, epi_status_raw: epiStatusRaw, status_geral_raw: statusGeralRaw
+    });
+  } catch (e: any) {
+    err++;
+    await supabaseAdmin.from('import_item').insert({
+      job_id: jobId, row_number: i+1, status: 'error',
+      message: e?.message || 'Erro ao importar linha',
+      colaborador: nome, loja, consultor,
+      epi_nome: epiNome, epi_status_raw: epiStatusRaw, status_geral_raw: statusGeralRaw
+    });
   }
 
-  return NextResponse.json({
-    message: 'Importação concluída',
-    file: filename,
-    total: colaboradores.length
-  })
+  await supabaseAdmin.from('import_job').update({
+    processed, ok_count: ok, error_count: err
+  }).eq('id', jobId);
+}
+
+
+    await supabaseAdmin.from('import_job').update({
+      status: 'done', finished_at: new Date().toISOString()
+    }).eq('id', jobId);
+
+    return NextResponse.json({ jobId });
+  } catch (err: any) {
+    console.error(err);
+    return NextResponse.json({ error: err?.message || 'Erro no import' }, { status: 500 });
+  }
 }

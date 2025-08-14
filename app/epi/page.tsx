@@ -1,47 +1,81 @@
-'use client'
+'use client';
 
+<<<<<<< HEAD
 import { useEffect, useState } from 'react'
 import { createSupabase } from '@/lib/supabase'
 import { format, addMonths } from 'date-fns'
 import Link from 'next/link'
+=======
+import { useEffect, useMemo, useState } from 'react';
+import { supabaseAdmin } from '@/lib/supabase';
+>>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 import {
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  LineChart, Line
-} from 'recharts'
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  PieChart, Pie, Cell
+} from 'recharts';
 
-type EpiEntry = {
-  nome_epi: string
-  status_epi: string
-  status: string
-  proximo_fornecimento: string | null
-  mes_fornecimento: string
+type Kind = { id: number; name: string; color_hex?: string | null };
+type Colab = { id: number; nome: string; loja: string | null; consultor: string | null; status_geral_id: number | null };
+
+const NORM = (s?: string) =>
+  (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '_');
+
+const PAGE = 1000;
+const GREY = '#e5e7eb';
+
+const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
+
+async function selectAll<T>(table: string, columns: string, orderBy: string = 'id'): Promise<T[]> {
+  let from = 0;
+  let out: T[] = [];
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from(table as any)
+      .select(columns as any)
+      .order(orderBy, { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`selectAll ${table}: ${error.message}`);
+    const chunk = (data || []) as T[];
+    out = out.concat(chunk);
+    if (chunk.length < PAGE) break;
+    from += PAGE;
+  }
+  return out;
 }
 
-type Colaborador = {
-  nome: string
-  status: string
-  loja: string
-  consultor: string
-  epis: EpiEntry[]
-}
+export default function ColaboradoresDashboard() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-const COLORS = ['#22c55e', '#facc15', '#ef4444']
+  const [kinds, setKinds] = useState<Kind[]>([]);
+  const [colabs, setColabs] = useState<Colab[]>([]);
 
-export default function EpiDashboard() {
-  
-  const [data, setData] = useState<Colaborador[]>([])
-  const [filtros, setFiltros] = useState({
-    loja: '',
-    consultor: '',
-    inicio: '',
-    fim: ''
-  })
+  // Filtros globais (afetam donuts, top10 e lista)
+  const [filtConsultor, setFiltConsultor] = useState<string>('');
+  const [filtLoja, setFiltLoja] = useState<string>('');
+
+  // Filtros internos da lista
+  const [listStatus, setListStatus] = useState<string>('');   // '', EM_DIA, PENDENTE, VENCIDO...
+  const [listConsultor, setListConsultor] = useState<string>('');
+  const [listLoja, setListLoja] = useState<string>('');
+  const [listSearch, setListSearch] = useState<string>('');
+
+  // Ordenação da lista
+  const [sortBy, setSortBy] = useState<'consultor'|'nome'|'loja'|'status'>('consultor');
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
 
   useEffect(() => {
-    fetchData()
-  }, [filtros])
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
+<<<<<<< HEAD
   async function fetchData() {
     const supabase = createSupabase()
     let q = supabase.from('assinaturas_epi').select('*')
@@ -58,359 +92,345 @@ export default function EpiDashboard() {
   }
   const consultores = ['', ...Array.from(new Set(data.map(d => d.consultor))).sort()]
   const lojas       = ['', ...Array.from(new Set(data.map(d => d.loja))).sort()]
+=======
+        // status kinds (normalmente poucos)
+        const { data: kindsData, error: kErr } =
+          await supabaseAdmin.from('status_geral_kind').select('id,name,color_hex');
+        if (kErr) throw new Error(kErr.message);
+        setKinds((kindsData || []) as Kind[]);
+>>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 
-  // RAW data for cards & charts
-  const total = data.length
-  const counts = data.reduce<Record<string,number>>((acc, c) => {
-    const s = c.status.toUpperCase()
-    acc[s] = (acc[s]||0) + 1
-    return acc
-  }, {})
-
-  // PieData Colaboradores
-  const pieData = [
-    { name: 'Em Dia',   value: counts['EM DIA'] || 0 },
-    { name: 'Pendente', value: counts['PENDENTE'] || 0 },
-    { name: 'Vencido',  value: counts['VENCIDO']  || 0 },
-  ]
-
-  // PieData EPIs (novo)
-  const epiCounts = data.reduce<Record<string,number>>((acc, c) => {
-    c.epis.forEach(e => {
-      const s = e.status_epi.toUpperCase()
-      acc[s] = (acc[s]||0) + 1
-    })
-    return acc
-  }, {})
-  
-  const totalEpis = Object.values(epiCounts).reduce((sum, v) => sum + v, 0)
-
-
-  // Top-10 lojas com mais EPIs vencidos, para line chart
-  const evMap = data.reduce<Record<string,number>>((acc, c) => {
-    c.epis.forEach(e => {
-      if (e.status.toUpperCase() === 'VENCIDO') {
-        acc[c.loja] = (acc[c.loja]||0) + 1
+        // colaboradores — TODOS, em chunks de 1000
+        const allColabs = await selectAll<Colab>(
+          'colaborador',
+          'id,nome,loja,consultor,status_geral_id'
+        );
+        setColabs(allColabs);
+      } catch (e: any) {
+        setError(e?.message || 'Erro ao carregar dados');
+      } finally {
+        setLoading(false);
       }
-    })
-    return acc
-  }, {})
-  const lineData = Object.entries(evMap)
-    .map(([loja, count]) => ({ loja, count }))
-    .sort((a,b) => b.count - a.count)
-    .slice(0, 10)
+    })();
+  }, []);
 
-  // EPIs com entrega futura
-  const hoje = new Date().toISOString().split('T')[0]
-  const futureCount = data.reduce((sum, c) =>
-    sum + c.epis.filter(e => e.proximo_fornecimento && e.proximo_fornecimento >= hoje).length
-  , 0)
+  const colorByNorm = useMemo(() => {
+    const m = new Map<string, string>();
+    kinds.forEach(k => m.set(NORM(k.name), k.color_hex || '#64748b'));
+    if (!m.get('EM_DIA')) m.set('EM_DIA', '#22c55e');
+    if (!m.get('PENDENTE')) m.set('PENDENTE', '#facc15');
+    if (!m.get('VENCIDO')) m.set('VENCIDO', '#ef4444');
+    return m;
+  }, [kinds]);
 
-  // Previsão próximo mês
-  const proxMes = format(addMonths(new Date(), 1), 'yyyy-MM')
-  const nextMonthCount = data.reduce((sum, c) =>
-    sum + c.epis.filter(e => e.mes_fornecimento === proxMes).length
-  , 0)
+  const kindById = useMemo(() => {
+    const m = new Map<number, Kind>();
+    kinds.forEach(k => m.set(k.id, k));
+    return m;
+  }, [kinds]);
 
-  // Tabela: agrupamento se não há filtro
-  const isFiltered = Boolean(
-    filtros.loja || filtros.consultor || filtros.inicio || filtros.fim
-  )
-  // Dados ordenados e agrupados
-  const sortedData = [...data].sort((a, b) =>
-    a.consultor.localeCompare(b.consultor)
-  )
-  const grouped: Record<string, Colaborador[]> = {}
-  sortedData.forEach(item => {
-    const key = item.consultor || '—'
-    grouped[key] = [...(grouped[key]||[]), item]
-  })
-  const consultorKeys = Object.keys(grouped).sort()
+  // Opções (combos) a partir do dataset completo — dedupe, trim e valores seguros
+  const allConsultores = useMemo(() => {
+    const vals = colabs
+      .map(c => (c.consultor ?? '').trim())
+      .map(v => v === '' ? '—' : v);
+    return ['', ...uniq(vals).sort()];
+  }, [colabs]);
+
+  const allLojas = useMemo(() => {
+    const vals = colabs
+      .map(c => (c.loja ?? '').trim())
+      .map(v => v === '' ? '—' : v);
+    return ['', ...uniq(vals).sort()];
+  }, [colabs]);
+
+  // **AQUI estava o bug**: já incluímos '' aqui; não adicionar '' novamente no render.
+  const allStatus = useMemo(() => {
+    const vals = kinds.map(k => NORM(k.name)).filter(Boolean);
+    return ['', ...uniq(vals)];
+  }, [kinds]);
+
+  // Aplica filtros globais
+  const filteredColabs = useMemo(() => {
+    return colabs.filter(c => {
+      if (filtConsultor && (c.consultor?.trim() || '—') !== filtConsultor) return false;
+      if (filtLoja && (c.loja?.trim() || '—') !== filtLoja) return false;
+      return true;
+    });
+  }, [colabs, filtConsultor, filtLoja]);
+
+  // Contagens por status (EM_DIA / PENDENTE / VENCIDO)
+  const statusCounts = useMemo(() => {
+    let em = 0, pe = 0, ve = 0;
+    for (const c of filteredColabs) {
+      const n = c.status_geral_id ? NORM(kindById.get(c.status_geral_id)?.name || '') : '';
+      if (n === 'EM_DIA') em++;
+      else if (n === 'PENDENTE') pe++;
+      else if (n === 'VENCIDO') ve++;
+    }
+    return { emDia: em, pendente: pe, vencido: ve, total: filteredColabs.length };
+  }, [filteredColabs, kindById]);
+
+  // Top 10 lojas com mais colaboradores pendentes
+  const topLojasPendentes = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of filteredColabs) {
+      const n = c.status_geral_id ? NORM(kindById.get(c.status_geral_id)?.name || '') : '';
+      if (n === 'PENDENTE') {
+        const key = (c.loja?.trim() || '—');
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([loja, count]) => ({ loja, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [filteredColabs, kindById]);
+
+  // Tabela: aplica filtros internos e ordenação
+  const tableRows = useMemo(() => {
+    const base = filteredColabs.map(c => {
+      const kind = c.status_geral_id ? kindById.get(c.status_geral_id) : undefined;
+      const statusName = kind?.name || '—';
+      const statusNorm = kind ? NORM(kind.name) : '';
+      return {
+        consultor: (c.consultor?.trim() || '—'),
+        nome: c.nome,
+        loja: (c.loja?.trim() || '—'),
+        statusName,
+        statusNorm,
+      };
+    });
+
+    const fStatus = listStatus;
+    const fConsult = listConsultor;
+    const fLoja = listLoja;
+    const fSearch = listSearch.trim().toLowerCase();
+
+    let rows = base.filter(r => {
+      if (fStatus && r.statusNorm !== fStatus) return false;
+      if (fConsult && r.consultor !== fConsult) return false;
+      if (fLoja && r.loja !== fLoja) return false;
+      if (fSearch) {
+        const hay = `${r.nome} ${r.consultor} ${r.loja} ${r.statusName}`.toLowerCase();
+        if (!hay.includes(fSearch)) return false;
+      }
+      return true;
+    });
+
+    rows.sort((a, b) => {
+      const dir = sortDir === 'asc' ? 1 : -1;
+      const cmp = (x: string, y: string) => x.localeCompare(y) * dir;
+      switch (sortBy) {
+        case 'consultor': return cmp(a.consultor, b.consultor) || cmp(a.nome, b.nome);
+        case 'nome':      return cmp(a.nome, b.nome) || cmp(a.consultor, b.consultor);
+        case 'loja':      return cmp(a.loja, b.loja) || cmp(a.consultor, b.consultor);
+        case 'status':    return cmp(a.statusName, b.statusName) || cmp(a.consultor, b.consultor);
+      }
+    });
+
+    return rows;
+  }, [filteredColabs, kindById, listStatus, listConsultor, listLoja, listSearch, sortBy, sortDir]);
+
+  if (loading) return <div className="p-6">Carregando…</div>;
+  if (error)   return <div className="p-6 text-red-600">Erro: {error}</div>;
+
+  const donutDefs = [
+    { label: 'Em Dia',    key: 'EM_DIA',    count: statusCounts.emDia,    color: colorByNorm.get('EM_DIA') || '#22c55e' },
+    { label: 'Pendentes', key: 'PENDENTE',  count: statusCounts.pendente, color: colorByNorm.get('PENDENTE') || '#facc15' },
+    { label: 'Vencidos',  key: 'VENCIDO',   count: statusCounts.vencido,  color: colorByNorm.get('VENCIDO') || '#ef4444' },
+  ] as const;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard EPIs</h1>
+      <h1 className="text-2xl font-bold">Dashboard — Colaboradores</h1>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap gap-4 items-end">
-        {/* Filtrar por Consultor */}
+      {/* Filtros globais */}
+      <div className="bg-white rounded shadow p-4 flex flex-wrap gap-4 items-end">
         <div className="flex flex-col">
           <label className="text-sm font-medium">Consultor</label>
-          <select
-            className="border px-3 py-2 rounded"
-            value={filtros.consultor}
-            onChange={e => setFiltros({ ...filtros, consultor: e.target.value })}
-          >
-            {consultores.map(c => (
-              <option key={c} value={c}>{c || 'Todos'}</option>
+          <select className="border px-3 py-2 rounded" value={filtConsultor} onChange={e=>setFiltConsultor(e.target.value)}>
+            {allConsultores.map(c => (
+              <option key={`filt-consultor-${c || 'ALL'}`} value={c}>{c || 'Todos'}</option>
             ))}
           </select>
         </div>
-          {/* Filtrar por Loja */}
         <div className="flex flex-col">
           <label className="text-sm font-medium">Loja</label>
-          <select
-            className="border px-3 py-2 rounded"
-            value={filtros.loja}
-            onChange={e => setFiltros({ ...filtros, loja: e.target.value })}
-          >
-            {lojas.map(l => (
-              <option key={l} value={l}>{l || 'Todas'}</option>
+          <select className="border px-3 py-2 rounded" value={filtLoja} onChange={e=>setFiltLoja(e.target.value)}>
+            {allLojas.map(l => (
+              <option key={`filt-loja-${l || 'ALL'}`} value={l}>{l || 'Todas'}</option>
             ))}
           </select>
         </div>
-        {/* Período de Próx. Fornecimento */}
-        <div className="flex flex-col">
-          <label className="text-sm font-medium">De</label>
-          <input
-            type="date"
-            className="border px-3 py-2 rounded"
-            value={filtros.inicio}
-            onChange={e => setFiltros({ ...filtros, inicio: e.target.value })}
-          />
-        </div>
-        <div className="flex flex-col">
-          <label className="text-sm font-medium">Até</label>
-          <input
-            type="date"
-            className="border px-3 py-2 rounded"
-            value={filtros.fim}
-            onChange={e => setFiltros({ ...filtros, fim: e.target.value })}
-          />
-        </div>
-         {/* Botão Importar */}
-        <Link href="/epi/upload">
-          <button className="bg-blue-600 text-white px-4 py-2 rounded">
-            Importar
-          </button>
-        </Link>
       </div>
 
-      {/* Cards de Indicadores */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="p-4 bg-slate-600 text-white rounded shadow">
-          <h2 className="font-semibold">Total Colaboradores</h2>
-          <p className="text-2xl">{total}</p>
-        </div>
-        <div className="p-4 bg-green-600 text-white rounded shadow">
-          <h2 className="font-semibold">Em Dia</h2>
-          <p className="text-2xl">
-            {counts['EM DIA'] || 0} ({ total ? Math.round((counts['EM DIA']||0)/total*100) : 0 }%)
-          </p>
-        </div>
-        <div className="p-4 bg-yellow-500 text-white rounded shadow">
-          <h2 className="font-semibold">Pendentes</h2>
-          <p className="text-2xl">
-            {counts['PENDENTE'] || 0} ({ total ? Math.round((counts['PENDENTE']||0)/total*100) : 0 }%)
-          </p>
-        </div>
-        <div className="p-4 bg-red-600 text-white rounded shadow">
-          <h2 className="font-semibold">Vencidos</h2>
-          <p className="text-2xl">
-            {counts['VENCIDO'] || 0} ({ total ? Math.round((counts['VENCIDO']||0)/total*100) : 0 }%)
-          </p>
+      {/* Donuts de status */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <DonutCard
+          key="donut-total"
+          title={'Total de Colaboradores'}
+          count={statusCounts.total}
+          total={statusCounts.total}
+          color={'#3b82f6'}
+        />
+        {donutDefs.map(d => (
+          <DonutCard
+            key={`donut-${d.key}`}
+            title={d.label}
+            count={d.count}
+            total={statusCounts.total}
+            color={d.color}
+          />
+        ))}
+      </div>
+
+      {/* Top 10 Lojas (Pendentes) */}
+      <div className="bg-white rounded shadow p-4">
+        <h3 className="font-semibold mb-2">Top 10 lojas com mais colaboradores pendentes</h3>
+        <div className="h-[420px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={topLojasPendentes} layout="vertical" margin={{ left: 16, right: 24, top: 8, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" />
+              <YAxis dataKey="loja" type="category" width={140} />
+              <Tooltip />
+              <Bar dataKey="count" fill={colorByNorm.get('PENDENTE') || '#facc15'} radius={[4,4,4,4]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-        {/* Top 3 Indicadores em Donuts */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {['EM DIA', 'PENDENTE', 'VENCIDO'].map((statusKey, i) => {
-            const count = counts[statusKey] || 0
-            const pct   = total ? Math.round((count / total) * 100) : 0
-            const label = statusKey === 'EM DIA'
-              ? 'Em Dia'
-              : statusKey === 'PENDENTE'
-                ? 'Pendentes'
-                : 'Vencidos'
+      {/* Lista com filtros internos e ordenação */}
+      <div className="bg-white rounded shadow p-4">
+        <div className="flex flex-wrap gap-3 items-end mb-3">
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Status</label>
+            <select className="border px-2 py-1 rounded" value={listStatus} onChange={e=>setListStatus(e.target.value)}>
+              {/* NÃO adicionar '' de novo, pois allStatus já começa com '' */}
+              {allStatus.map(s => (
+                <option key={`status-${s || 'ALL'}`} value={s}>
+                  {s ? s.replace('_',' ') : 'Todos'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Consultor</label>
+            <select className="border px-2 py-1 rounded" value={listConsultor} onChange={e=>setListConsultor(e.target.value)}>
+              {allConsultores.map(c => (
+                <option key={`list-consultor-${c || 'ALL'}`} value={c}>{c || 'Todos'}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-xs text-gray-600">Loja</label>
+            <select className="border px-2 py-1 rounded" value={listLoja} onChange={e=>setListLoja(e.target.value)}>
+              {allLojas.map(l => (
+                <option key={`list-loja-${l || 'ALL'}`} value={l}>{l || 'Todas'}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col grow">
+            <label className="text-xs text-gray-600">Busca</label>
+            <input className="border px-2 py-1 rounded" value={listSearch} onChange={e=>setListSearch(e.target.value)} placeholder="Nome, consultor, loja…" />
+          </div>
 
-            // dados: fatia colorida + fatia cinza de “complemento”
-            const donutData = [
-              { name: label,   value: count },
-              { name: 'other', value: total - count }
-            ]
-
-            return (
-              <div key={statusKey} className="bg-white rounded shadow p-4 text-center">
-                <h3 className="font-semibold mb-2">{label}</h3>
-                <div className="relative h-40">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={donutData}
-                        dataKey="value"
-                        cx="50%" cy="50%"
-                        innerRadius={50}
-                        outerRadius={70}
-                        startAngle={90}
-                        endAngle={-270}
-                        paddingAngle={2}
-                        isAnimationActive={false}
-                      >
-                        <Cell key="c0" fill={COLORS[i]} />
-                        <Cell key="c1" fill="#E5E7EB" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  {/* percentual grande no centro */}
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-2xl font-bold">{pct}%</span>
-                    <span className="text-sm text-gray-500">{count.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-
-        {/* 2) Status EPIs (novo) */}
-        <div className="bg-white rounded shadow p-4">
-          <h3 className="font-semibold mb-2">Status dos EPIs</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-      {Object.entries(epiCounts).map(([statusKey, count], i) => {
-        const pct = totalEpis
-          ? Math.round((count / totalEpis) * 100)
-          : 0;
-        // ajuste seus rótulos conforme os valores exatos de status_epi
-        const label = statusKey.charAt(0) + statusKey.slice(1).toLowerCase();
-        const color = COLORS[i % COLORS.length];
-
-        const donutData = [
-          { name: label,   value: count },
-          { name: 'other', value: totalEpis - count }
-        ];
-
-        return (
-          <div key={statusKey} className="text-center">
-            <h3 className="text-sm font-medium mb-2">{label}</h3>
-            <div className="relative h-28">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={donutData}
-                    dataKey="value"
-                    innerRadius={36}
-                    outerRadius={52}
-                    startAngle={90}
-                    endAngle={-270}
-                    paddingAngle={2}
-                    isAnimationActive={false}
-                  >
-                    <Cell key="c0" fill={color} />
-                    <Cell key="c1" fill="#E5E7EB" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-lg font-bold">{pct}%</span>
-                <span className="text-xs text-gray-500">{count.toLocaleString()}</span>
-              </div>
+          <div className="flex items-end gap-2 ml-auto">
+            <div className="flex flex-col">
+              <label className="text-xs text-gray-600">Ordenar por</label>
+              <select className="border px-2 py-1 rounded" value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
+                <option value="consultor">Consultor</option>
+                <option value="nome">Colaborador</option>
+                <option value="loja">Loja</option>
+                <option value="status">Status</option>
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs text-gray-600">Direção</label>
+              <select className="border px-2 py-1 rounded" value={sortDir} onChange={e=>setSortDir(e.target.value as any)}>
+                <option value="asc">Asc</option>
+                <option value="desc">Desc</option>
+              </select>
             </div>
           </div>
-        );
-      })}
-    </div>
         </div>
 
-        {/* Top-10 EPIs vencidos por loja (progress bars) */}
-      
-      <div className="bg-white rounded shadow p-4">
-        <h3 className="font-semibold mb-2">Top 10 Lojas por EPIs Vencidos</h3>
-
-          {/* calcula o máximo pra normalizar as barras */}
-          {(() => {
-            const maxCount = Math.max(...lineData.map(d => d.count), 1)
-            return (
-              <div className="space-y-3">
-                {lineData.map(({ loja, count }) => {
-                  const pct = Math.round((count / maxCount) * 100)
-                  return (
-                    <div key={loja} className="flex items-center">
-                      {/* label da loja */}
-                      <span className="w-1/5 text-sm font-medium">{loja}</span>
-
-                      {/* barra de fundo */}
-                      <div className="relative w-3/5 h-4 bg-gray-200 rounded overflow-hidden mx-2">
-                        {/* barra preenchida */}
-                        <div
-                          className="absolute top-0 left-0 h-full bg-red-500"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-
-                      {/* percentual */}
-                      <span className="w-1/5 text-sm font-medium">{pct}%</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
-        </div>
-
-      </div>
-
-      {/* Cards adicionais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="p-4 bg-blue-600 text-white rounded shadow">
-          <h3 className="font-semibold">EPIs com Entrega Futura</h3>
-          <p className="text-2xl">{futureCount}</p>
-        </div>
-        <div className="p-4 bg-indigo-600 text-white rounded shadow">
-          <h3 className="font-semibold">
-            Previsão Próx. Mês ({format(addMonths(new Date(),1),'MMM/yyyy')})
-          </h3>
-          <p className="text-2xl">{nextMonthCount}</p>
-        </div>
-      </div>
-
-      {/* Tabela de resultados */}
-      {/* … */}
-<div className="overflow-auto bg-white rounded shadow p-4">
-  <h3 className="font-semibold mb-2">Colaboradores Detalhado</h3>
-  <table className="min-w-full text-sm border">
-    <thead className="bg-gray-100">
-      <tr>
-        <th className="px-2 py-1 border">Consultor</th>
-        <th className="px-2 py-1 border">Colaborador</th>
-        <th className="px-2 py-1 border">Status</th>
-        <th className="px-2 py-1 border">Loja</th>
-      </tr>
-    </thead>
-    <tbody>
-      {isFiltered
-        // modo FILTRADO: lista simples
-        ? data.map((c, i) => (
-            <tr key={i} className="hover:bg-gray-50">
-              <td className="px-2 py-1 border">{c.consultor || '—'}</td>
-              <td className="px-2 py-1 border">{c.nome}</td>
-              <td className="px-2 py-1 border">{c.status}</td>
-              <td className="px-2 py-1 border">{c.loja}</td>
-            </tr>
-          ))
-        // modo AGRUPADO (nenhum filtro): agrupa por consultor
-        : consultorKeys.map((consultor) =>
-            grouped[consultor].map((c, idx) => (
-              <tr key={`${consultor}-${idx}`} className="hover:bg-gray-50">
-                {idx === 0 && (
-                  <td
-                    className="px-2 py-1 border"
-                    rowSpan={grouped[consultor].length}
-                  >
-                    {consultor}
-                  </td>
-                )}
-                <td className="px-2 py-1 border">{c.nome}</td>
-                <td className="px-2 py-1 border">{c.status}</td>
-                <td className="px-2 py-1 border">{c.loja}</td>
+        <div className="overflow-auto">
+          <table className="min-w-full text-sm border">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-2 py-1 border text-left">Consultor</th>
+                <th className="px-2 py-1 border text-left">Colaborador</th>
+                <th className="px-2 py-1 border text-left">Loja</th>
+                <th className="px-2 py-1 border text-left">Status Geral</th>
               </tr>
-            ))
-          )}
-    </tbody>
-  </table>
-</div>
+            </thead>
+            <tbody>
+              {tableRows.map((r, i) => (
+                <tr key={`row-${r.nome}-${i}`} className="hover:bg-gray-50">
+                  <td className="px-2 py-1 border">{r.consultor}</td>
+                  <td className="px-2 py-1 border">{r.nome}</td>
+                  <td className="px-2 py-1 border">{r.loja}</td>
+                  <td className="px-2 py-1 border">
+                    <span
+                      className="px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{
+                        background: (colorByNorm.get(r.statusNorm) || '#e5e7eb') + '33',
+                        color: colorByNorm.get(r.statusNorm) || '#374151',
+                      }}
+                    >
+                      {r.statusName}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {tableRows.length === 0 && (
+                <tr><td colSpan={4} className="px-2 py-8 text-center text-gray-500">Nenhum colaborador encontrado.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
-  )
+  );
+}
+
+function DonutCard({ title, count, total, color }:{
+  title: string; count: number; total: number; color: string;
+}) {
+  const pct = total ? Math.round((count / total) * 100) : 0;
+  const data = [
+    { name: title, value: count },
+    { name: 'outros', value: Math.max(total - count, 0) },
+  ];
+  return (
+    <div className="bg-white rounded shadow p-4 text-center">
+      <h3 className="font-semibold mb-2">{title}</h3>
+      <div className="relative h-40">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              cx="50%" cy="50%"
+              innerRadius={50}
+              outerRadius={70}
+              startAngle={90}
+              endAngle={-270}
+              isAnimationActive={false}
+              paddingAngle={2}
+            >
+              <Cell fill={color} />
+              <Cell fill={GREY} />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-bold">{pct}%</span>
+          <span className="text-sm text-gray-500">{count.toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
