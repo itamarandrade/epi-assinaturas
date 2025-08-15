@@ -154,7 +154,7 @@ export async function getDetalhePorConsultorColaboradores(consultor: string): Pr
 // ================================
 // 5) Opções dos dropdowns (filtros)
 // ================================
-export async function getOpcoesFiltros() {
+export async function getOpcoesFiltros(): Promise<{ consultores: string[]; lojas: string[] }> {
   const [c, l] = await Promise.all([
     supabase.from('vw_epis_colaboradores').select('consultor').not('consultor', 'is', null),
     supabase.from('vw_epis_colaboradores').select('loja').not('loja', 'is', null),
@@ -163,12 +163,12 @@ export async function getOpcoesFiltros() {
   if (l.error) throw l.error
 
   const consultores = Array.from(
-    new Set((c.data ?? []).map(r => String((r as any).consultor).trim()).filter(Boolean))
-  ).sort()
+    new Set((c.data ?? []).map((r: any) => String(r.consultor).trim()).filter(Boolean))
+  ).sort() as string[]
 
   const lojas = Array.from(
-    new Set((l.data ?? []).map(r => String((r as any).loja).trim()).filter(Boolean))
-  ).sort()
+    new Set((l.data ?? []).map((r: any) => String(r.loja).trim()).filter(Boolean))
+  ).sort() as string[]
 
   return { consultores, lojas }
 }
