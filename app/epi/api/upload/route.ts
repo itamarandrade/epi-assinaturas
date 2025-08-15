@@ -6,28 +6,6 @@ import { ensureEpi } from '@/services/epiCatalogService';
 import { upsertColaborador, findColaboradorId } from '@/services/colaboradorService';
 import { upsertColaboradorEpi } from '@/services/colaboradorEpiService';
 
-<<<<<<< HEAD
-function parseDate(v: string | number | Date | null | undefined): string | null {
-  if (!v) return null
-  if (v instanceof Date) {
-    return isNaN(v.getTime()) ? null : v.toISOString().split('T')[0]
-  }
-  // agora: usa o parser interno do xlsx para número serial
-  if (typeof v === 'number') {
-    const o = SSF.parse_date_code(v)
-    if (o && o.y) {
-      const d = new Date(o.y, o.m - 1, o.d)
-      return d.toISOString().split('T')[0]
-    }
-    return null
-  }
-  if (typeof v === 'string') {
-    const d = new Date(v)
-    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
-  }
-  const d = new Date(v)
-  return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0]
-=======
 type Row = Record<string, any>;
 
 // cabeçalhos flexíveis (alias -> campo interno)
@@ -46,7 +24,6 @@ const HEADERS = {
 function pick(row: Record<string, any>, keys: string[]) {
   for (const k of keys) if (row[k] != null && row[k] !== '') return String(row[k]);
   return '';
->>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 }
 
 function toISODate(v: any): string | null {
@@ -68,18 +45,6 @@ function toISODate(v: any): string | null {
   return null;
 }
 
-<<<<<<< HEAD
-export async function POST(req: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
-  // 1️⃣ obter o arquivo
-  const form = await req.formData()
-  const file = form.get('file') as File
-  if (!file) {
-    return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 })
-=======
 function firstDayFromMonthText(v: any): string | null {
   if (!v) return null;
   const s = String(v).trim();
@@ -90,7 +55,6 @@ function firstDayFromMonthText(v: any): string | null {
   if (m1) {
     const mo = ('0' + m1[1]).slice(0,2);
     return `${m1[2]}-${mo.padStart(2,'0')}-01`;
->>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
   }
   // abreviações PT-BR (jan, fev, mar, abr, mai, jun, jul, ago, set, out, nov, dez)
   const map: Record<string,string> = {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'};
