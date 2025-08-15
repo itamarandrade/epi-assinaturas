@@ -1,14 +1,7 @@
 'use client';
 
-<<<<<<< HEAD
-import { useEffect, useState } from 'react'
-import { createSupabase } from '@/lib/supabase'
-import { format, addMonths } from 'date-fns'
-import Link from 'next/link'
-=======
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseAdmin } from '@/lib/supabase';
->>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell
@@ -75,30 +68,11 @@ export default function ColaboradoresDashboard() {
         setLoading(true);
         setError(null);
 
-<<<<<<< HEAD
-  async function fetchData() {
-    const supabase = createSupabase()
-    let q = supabase.from('assinaturas_epi').select('*')
-    if (filtros.loja)        q = q.eq('loja', filtros.loja)
-    if (filtros.consultor)   q = q.eq('consultor', filtros.consultor)
-    if (filtros.inicio)      q = q.gte('proximo_fornecimento', filtros.inicio)
-    if (filtros.fim)         q = q.lte('proximo_fornecimento', filtros.fim)
-    const { data: rows, error } = await q
-    if (error) {
-      console.error(error)
-      return
-    }
-    setData(rows as Colaborador[])
-  }
-  const consultores = ['', ...Array.from(new Set(data.map(d => d.consultor))).sort()]
-  const lojas       = ['', ...Array.from(new Set(data.map(d => d.loja))).sort()]
-=======
         // status kinds (normalmente poucos)
         const { data: kindsData, error: kErr } =
           await supabaseAdmin.from('status_geral_kind').select('id,name,color_hex');
         if (kErr) throw new Error(kErr.message);
         setKinds((kindsData || []) as Kind[]);
->>>>>>> e5a8b5a (epis ajustado e pagina de ocorrencias v1)
 
         // colaboradores — TODOS, em chunks de 1000
         const allColabs = await selectAll<Colab>(
