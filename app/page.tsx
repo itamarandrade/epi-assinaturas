@@ -7,6 +7,10 @@ import SmartBarChart from '@/components/ChartBar';
 import TabelaUniversal, { DataTableG } from '@/components/dataTable';
 import type { Column } from '@/components/dataTable';
 
+// 🆕 placeholders genéricos
+import { Placeholder } from '@/components/placeholder';
+import { LoadingSwitch } from '@/components/placeholder/LoadingSwitch';
+
 import {
   getResumoColaboradores,
   getRankingLojaColaboradores,
@@ -18,7 +22,6 @@ import {
   type RankingConsultor,
   type DetalheLoja,
 } from '@/services/epiDashboardService';
-
 
 type ConsultorRow = {
   consultor: string;
@@ -64,6 +67,9 @@ export default function HomeDashboard() {
   const [detalheLojaConsultor, setDetalheLojaConsultor] = useState<DetalheLoja[]>([]);
   const [opcoes, setOpcoes] = useState<{lojas: string[]; consultores: string[]}>({ lojas: [], consultores: [] });
 
+  // 🆕 estado de carregamento global desta página
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
   const logErr = (prefix: string, err: unknown) => {
     if (err && typeof err === 'object' && 'message' in (err as any)) {
       console.error(prefix, (err as any).message, err);
@@ -84,60 +90,72 @@ export default function HomeDashboard() {
     }));
   }, [tabelaConsultor]);
 
-  // carregar opções de filtro
+  // carregar opções de filtro (não bloqueia; mas entra no loading inicial junto)
   useEffect(() => {
     getOpcoesFiltros().then(setOpcoes).catch(console.error);
   }, []);
 
   // carregar dados quando filtros mudarem
   useEffect(() => {
-    const filters = { loja: filtLoja || undefined, consultor: filtConsultor || undefined };
+    let alive = true;
+    (async () => {
+      setIsLoading(true);
+      const filters = { loja: filtLoja || undefined, consultor: filtConsultor || undefined };
 
-    getResumoColaboradores(filters)
-      .then(setDadosDonut)
-      .catch(e => logErr('Resumo', e));
+      try {
+        const p1 = getResumoColaboradores(filters)
+          .then(data => alive && setDadosDonut(data))
+          .catch(e => logErr('Resumo', e));
 
-    getRankingLojaColaboradores(filters)
-      .then(rows => {
-        const top10 = [...rows]
-          .sort((a, b) => (b.problemas || 0) - (a.problemas || 0))
-          .slice(0, 10);
-        setDadosBar(top10);
-      })
-      .catch(e => logErr('Ranking Lojas', e));
+        const p2 = getRankingLojaColaboradores(filters)
+          .then(rows => {
+            if (!alive) return;
+            const top10 = [...rows]
+              .sort((a, b) => (b.problemas || 0) - (a.problemas || 0))
+              .slice(0, 10);
+            setDadosBar(top10);
+          })
+          .catch(e => logErr('Ranking Lojas', e));
 
-    // resumo por consultor (lista todos; só filtra por loja)
-    getResumoPorConsultorColaboradores({ loja: filters.loja })
-      .then(raw => {
-        const withPct = raw.map(r => {
-          const total = r.emDia + r.pendente + r.vencido;
-          return {
-            ...r,
-            pctEmDia: total ? +(100 * r.emDia / total).toFixed(1) : 0,
-            pctPen:   total ? +(100 * r.pendente / total).toFixed(1) : 0,
-            pctVenc:  total ? +(100 * r.vencido / total).toFixed(1) : 0,
-          };
-        }).sort((a, b) => b.pctEmDia - a.pctEmDia);
-        setTabelaConsultor(withPct);
-      })
-      .catch(e => logErr('Resumo Consultor', e));
+        const p3 = getResumoPorConsultorColaboradores({ loja: filters.loja })
+          .then(raw => {
+            if (!alive) return;
+            const withPct = raw.map(r => {
+              const total = r.emDia + r.pendente + r.vencido;
+              return {
+                ...r,
+                pctEmDia: total ? +(100 * r.emDia / total).toFixed(1) : 0,
+                pctPen:   total ? +(100 * r.pendente / total).toFixed(1) : 0,
+                pctVenc:  total ? +(100 * r.vencido / total).toFixed(1) : 0,
+              };
+            }).sort((a, b) => b.pctEmDia - a.pctEmDia);
+            setTabelaConsultor(withPct);
+          })
+          .catch(e => logErr('Resumo Consultor', e));
 
-    if (filtConsultor) {
-      getDetalhePorConsultorColaboradores(filtConsultor)
-        .then(rows => {
-          const sorted = rows.sort((a, b) => {
-            const totalA = a.emDia + a.pendente + a.vencido;
-            const totalB = b.emDia + b.pendente + b.vencido;
-            const pctA   = totalA ? a.emDia / totalA : 0;
-            const pctB   = totalB ? b.emDia / totalB : 0;
-            return pctB - pctA;
-          });
-          setDetalheLojaConsultor(sorted);
-        })
-        .catch(e => logErr('Detalhe por Consultor', e));
-    } else {
-      setDetalheLojaConsultor([]);
-    }
+        const p4 = filtConsultor
+          ? getDetalhePorConsultorColaboradores(filtConsultor)
+              .then(rows => {
+                if (!alive) return;
+                const sorted = rows.sort((a, b) => {
+                  const totalA = a.emDia + a.pendente + a.vencido;
+                  const totalB = b.emDia + b.pendente + b.vencido;
+                  const pctA   = totalA ? a.emDia / totalA : 0;
+                  const pctB   = totalB ? b.emDia / totalB : 0;
+                  return pctB - pctA;
+                });
+                setDetalheLojaConsultor(sorted);
+              })
+              .catch(e => logErr('Detalhe por Consultor', e))
+          : Promise.resolve().then(() => alive && setDetalheLojaConsultor([]));
+
+        await Promise.allSettled([p1, p2, p3, p4]);
+      } finally {
+        alive && setIsLoading(false);
+      }
+    })();
+
+    return () => { alive = false; };
   }, [filtLoja, filtConsultor]);
 
   // dropdowns
@@ -155,7 +173,7 @@ export default function HomeDashboard() {
     [dadosDonut]
   );
 
-  // totais agregados (para cards externos; o rodapé da tabela é calculado pelo getTotals)
+  // totais agregados
   const totaisConsultores = useMemo(() => {
     const emDia    = tabelaConsultor.reduce<number>((acc: number, r: ConsultorComPct) => acc + r.emDia, 0);
     const pendente = tabelaConsultor.reduce<number>((acc: number, r: ConsultorComPct) => acc + r.pendente, 0);
@@ -227,112 +245,135 @@ export default function HomeDashboard() {
   ]), []);
 
   return (
-    <div className="space-y-6 p-4">
-      {/* FILTROS */}
-      <div className="flex gap-4 mb-4">
-        <select className="border p-2" value={filtLoja} onChange={e => setFiltLoja(e.target.value)}>
-          <option value="">Todas as lojas</option>
-          {lojas.map((l, i) => (
-            <option key={`loja-${i}-${l}`} value={l}>{l}</option>
-          ))}
-        </select>
+    <LoadingSwitch
+      isLoading={isLoading}
+      placeholder={
+        <div className="space-y-6 p-4" aria-busy="true">
+          {/* filtros */}
+          <Placeholder.FiltersRow count={2} />
+          {/* KPIs (opcional): se quiser cards rápidos enquanto donut carrega */}
+          {/* <Placeholder.KpiRow count={4} /> */}
+          {/* donut + bar */}
+          <div className="grid gap-8 md:grid-cols-2">
+            <Placeholder.Donut size={240} cols={2} />
+            <Placeholder.Chart height={Math.max(300, 10 * 36)} />
+          </div>
+          {/* tabela consultores */}
+          <Placeholder.Table cols={6} rows={8} schema="2fr repeat(4,1fr) 1fr" />
+          {/* detalhe por loja (só mostra o skeleton se já tiver um consultor selecionado) */}
+          {Boolean(filtConsultor) && (
+            <Placeholder.Table cols={6} rows={8} schema="2fr repeat(4,1fr) 1fr" />
+          )}
+        </div>
+      }
+    >
+      {/* CONTEÚDO REAL */}
+      <div className="space-y-6 p-4">
+        {/* FILTROS */}
+        <div className="flex gap-4 mb-4" aria-busy={isLoading}>
+          <select className="border p-2" value={filtLoja} onChange={e => setFiltLoja(e.target.value)}>
+            <option value="">Todas as lojas</option>
+            {lojas.map((l, i) => (
+              <option key={`loja-${i}-${l}`} value={l}>{l}</option>
+            ))}
+          </select>
 
-        <select className="border p-2" value={filtConsultor} onChange={e => setFiltConsultor(e.target.value)}>
-          <option value="">Todos os consultores</option>
-          {consultores.map((c, i) => (
-            <option key={`consultor-${i}-${c}`} value={c}>{c}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* DONUT + BAR */}
-      <div className="flex gap-8">
-        {/* DONUT */}
-        <div className="flex-1 shadow-sm p-4 rounded-xl">
-          <DonutChart
-            data={dadosDonut}
-            innerRadiusPct={0.6}
-            outerRadiusPct={0.82}
-            highlightMax={true}
-            gradientByRank={true}
-            onSliceClick={(d) => setFiltConsultor(d.name)}
-            ariaLabel="Gráfico de rosca (donut) - Resumo de colaboradores"
-            defaultColors={PALETTE}
-            colorByKey={BASE_COLORS}
-            fixedOrder={['EM DIA', 'PENDENTE', 'VENCIDO']}
-            enforceStatusOrder={true}
-            sliceLabel={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-            showLegend={true}
-            legendShowPercent={true}
-            legendCols={2}
-          />
+          <select className="border p-2" value={filtConsultor} onChange={e => setFiltConsultor(e.target.value)}>
+            <option value="">Todos os consultores</option>
+            {consultores.map((c, i) => (
+              <option key={`consultor-${i}-${c}`} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
 
-        {/* BAR HORIZONTAL (TOP 10) */}
-        <div className="flex-1 shadow-sm p-4 rounded-xl">
-          <SmartBarChart
-            data={dadosBar}
-            labelKey="loja"
-            valueKey="problemas"
-            valueColorScale={getRedByValue}
-            valueColor="#ef4444"
-            valueLabel="Problemas (Pend+Venc)"
-            height={Math.max(300, dadosBar.length * 36)}
-            orientation="horizontal"
-            tipo="loja"
-            title="Ranking de Lojas"
-            formatValue={(n) => nf.format(Number(n) || 0)}
-            width={30}
-          />
+        {/* DONUT + BAR */}
+        <div className="flex gap-8">
+          {/* DONUT */}
+          <div className="flex-1 shadow-sm p-4 rounded-xl bg-white">
+            <DonutChart
+              data={dadosDonut}
+              innerRadiusPct={0.6}
+              outerRadiusPct={0.82}
+              highlightMax={true}
+              gradientByRank={true}
+              onSliceClick={(d) => setFiltConsultor(d.name)}
+              ariaLabel="Gráfico de rosca (donut) - Resumo de colaboradores"
+              defaultColors={PALETTE}
+              colorByKey={BASE_COLORS}
+              fixedOrder={['EM DIA', 'PENDENTE', 'VENCIDO']}
+              enforceStatusOrder={true}
+              sliceLabel={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              showLegend={true}
+              legendShowPercent={true}
+              legendCols={2}
+            />
+          </div>
+
+          {/* BAR HORIZONTAL (TOP 10) */}
+          <div className="flex-1 shadow-sm p-4 rounded-xl bg-white">
+            <SmartBarChart
+              data={dadosBar}
+              labelKey="loja"
+              valueKey="problemas"
+              valueColorScale={getRedByValue}
+              valueColor="#ef4444"
+              valueLabel="Problemas (Pend+Venc)"
+              height={Math.max(300, dadosBar.length * 36)}
+              orientation="horizontal"
+              tipo="loja"
+              title="Ranking de Lojas"
+              formatValue={(n) => nf.format(Number(n) || 0)}
+              width={30}
+            />
+          </div>
         </div>
-      </div>
 
-      {/* TABELA DE CONSULTORES (com totais) */}
-      <div className="bg-white rounded shadow p-4">
-        <h3 className="font-semibold mb-3">Resumo por Consultor</h3>
-        <DataTableG<ConsultorRow>
-          title="Resumo por Consultor"
-          columns={columnsConsultor}
-          rows={rowsConsultor}
-          striped
-          compact
-          stickyHeader
-          borderType="row"
-          showTotals
-          getTotals={(rows: ConsultorRow[]) => {
-            const sum = <K extends keyof ConsultorRow>(k: K) =>
-              rows.reduce<number>((acc, r) => acc + (Number(r[k]) || 0), 0);
-
-            const total = sum('total') || (sum('emDia') + sum('pendente') + sum('vencido'));
-            const pctGeral = total ? Number(((sum('emDia') * 100) / total).toFixed(1)) : 0;
-
-            return {
-              consultor: 'Totais',
-              emDia: nf.format(sum('emDia')),
-              pendente: nf.format(sum('pendente')),
-              vencido: nf.format(sum('vencido')),
-              total: nf.format(total),
-              pctEmDia: <span style={{ color: getPctColor(pctGeral) }}>{pctGeral}%</span>,
-            };
-          }}
-        />
-      </div>
-
-      {/* TABELA DETALHE POR LOJA (quando um consultor for selecionado) */}
-      {filtConsultor && (
+        {/* TABELA DE CONSULTORES (com totais) */}
         <div className="bg-white rounded shadow p-4">
-          <h3 className="font-semibold mb-3">Detalhe por Loja — {filtConsultor}</h3>
-          <DataTableG<LojaRow>
-            title={`Detalhe por Loja — ${filtConsultor}`}
-            columns={columnsLoja}
-            rows={rowsLoja}
+          <DataTableG<ConsultorRow>
+            title="Resumo por Consultor"
+            columns={columnsConsultor}
+            rows={rowsConsultor}
             striped
             compact
             stickyHeader
             borderType="row"
+            showTotals
+            getTotals={(rows: ConsultorRow[]) => {
+              const sum = <K extends keyof ConsultorRow>(k: K) =>
+                rows.reduce<number>((acc, r) => acc + (Number(r[k]) || 0), 0);
+
+              const total = sum('total') || (sum('emDia') + sum('pendente') + sum('vencido'));
+              const pctGeral = total ? Number(((sum('emDia') * 100) / total).toFixed(1)) : 0;
+
+              return {
+                consultor: 'Totais',
+                emDia: nf.format(sum('emDia')),
+                pendente: nf.format(sum('pendente')),
+                vencido: nf.format(sum('vencido')),
+                total: nf.format(total),
+                pctEmDia: <span style={{ color: getPctColor(pctGeral) }}>{pctGeral}%</span>,
+              };
+            }}
           />
         </div>
-      )}
-    </div>
+
+        {/* TABELA DETALHE POR LOJA (quando um consultor for selecionado) */}
+        {filtConsultor && (
+          <div className="bg-white rounded shadow p-4">
+            <h3 className="font-semibold mb-3">Detalhe por Loja — {filtConsultor}</h3>
+            <DataTableG<LojaRow>
+              title={`Detalhe por Loja — ${filtConsultor}`}
+              columns={columnsLoja}
+              rows={rowsLoja}
+              striped
+              compact
+              stickyHeader
+              borderType="row"
+            />
+          </div>
+        )}
+      </div>
+    </LoadingSwitch>
   );
 }

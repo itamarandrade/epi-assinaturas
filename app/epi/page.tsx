@@ -7,6 +7,10 @@ import SmartBarChart from '@/components/ChartBar';
 import { DataTableG } from '@/components/dataTable';
 import type { Column } from '@/components/dataTable';
 
+// 🆕 placeholders genéricos
+import { Placeholder } from '@/components/placeholder';
+import { LoadingSwitch } from '@/components/placeholder/LoadingSwitch';
+
 type RowColab = {
   consultor: string;
   nome: string;
@@ -71,7 +75,7 @@ async function selectAll<T>(table: string, columns: string, orderBy: string = 'i
 }
 
 export default function ColaboradoresDashboard() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);     // 🆕 será usado pelo LoadingSwitch
   const [error, setError] = useState<string | null>(null);
 
   const [kinds, setKinds] = useState<Kind[]>([]);
@@ -87,7 +91,7 @@ export default function ColaboradoresDashboard() {
   const [listLoja, setListLoja] = useState<string>('');
   const [listSearch, setListSearch] = useState<string>('');
 
-  // Ordenação da lista (mantida para coerência com seu estado)
+  // Ordenação da lista
   const [sortBy, setSortBy] = useState<'consultor'|'nome'|'loja'|'status'>('consultor');
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
 
@@ -97,13 +101,11 @@ export default function ColaboradoresDashboard() {
         setLoading(true);
         setError(null);
 
-        // status kinds (normalmente poucos)
         const { data: kindsData, error: kErr } =
           await supabaseAdmin.from('status_geral_kind').select('id,name,color_hex');
         if (kErr) throw new Error(kErr.message);
         setKinds((kindsData || []) as Kind[]);
 
-        // colaboradores — TODOS, em chunks de 1000
         const allColabs = await selectAll<Colab>(
           'colaborador',
           'id,nome,loja,consultor,status_geral_id'
@@ -132,7 +134,7 @@ export default function ColaboradoresDashboard() {
     return m;
   }, [kinds]);
 
-  // Opções (combos) a partir do dataset completo — dedupe, trim e valores seguros
+  // Opções (combos)
   const allConsultores = useMemo(() => {
     const vals = colabs
       .map(c => (c.consultor ?? '').trim())
@@ -147,7 +149,6 @@ export default function ColaboradoresDashboard() {
     return ['', ...uniq(vals).sort()];
   }, [colabs]);
 
-  // **AQUI estava o bug**: já incluímos '' aqui; não adicionar '' novamente no render.
   const allStatus = useMemo(() => {
     const vals = kinds.map(k => NORM(k.name)).filter(Boolean);
     return ['', ...uniq(vals)];
@@ -162,7 +163,7 @@ export default function ColaboradoresDashboard() {
     });
   }, [colabs, filtConsultor, filtLoja]);
 
-  // Contagens por status (EM_DIA / PENDENTE / VENCIDO)
+  // Contagens por status
   const statusCounts = useMemo(() => {
     let em = 0, pe = 0, ve = 0;
     for (const c of filteredColabs) {
@@ -190,20 +191,20 @@ export default function ColaboradoresDashboard() {
       .slice(0, 10);
   }, [filteredColabs, kindById]);
 
-  // Tabela: aplica filtros internos e ordenação
+  // Tabela: filtros internos + ordenação
   const tableRows: RowColab[] = useMemo(() => {
-  const base: RowColab[] = filteredColabs.map(c => {
-    const kind = c.status_geral_id ? kindById.get(c.status_geral_id) : undefined;
-    const statusName = kind?.name || '—';
-    const statusNorm = kind ? NORM(kind.name) : '';
-    return {
-      consultor: (c.consultor?.trim() || '—'),
-      nome: c.nome,
-      loja: (c.loja?.trim() || '—'),
-      statusName,
-      statusNorm,
-    };
-  });
+    const base: RowColab[] = filteredColabs.map(c => {
+      const kind = c.status_geral_id ? kindById.get(c.status_geral_id) : undefined;
+      const statusName = kind?.name || '—';
+      const statusNorm = kind ? NORM(kind.name) : '';
+      return {
+        consultor: (c.consultor?.trim() || '—'),
+        nome: c.nome,
+        loja: (c.loja?.trim() || '—'),
+        statusName,
+        statusNorm,
+      };
+    });
 
     const fStatus = listStatus;
     const fConsult = listConsultor;
@@ -233,48 +234,46 @@ export default function ColaboradoresDashboard() {
     });
 
     return rows;
-}, [filteredColabs, kindById, listStatus, listConsultor, listLoja, listSearch, sortBy, sortDir]);
+  }, [filteredColabs, kindById, listStatus, listConsultor, listLoja, listSearch, sortBy, sortDir]);
 
-  // Definição das colunas para o DataTable
+  // Colunas DataTable
   const columnsColab: Column<RowColab>[] = useMemo(() => ([
-  {
-    key: "consultor",
-    label: "Consultor",
-    sortable: true,
-    filterType: 'select',
-    filterOptions: allConsultores.filter(Boolean), // remove '' aqui (o "Todos" já é padrão)
-    getFilterValue: (r) => r.consultor || '—',
-  },
-  {
-    key: "nome",
-    label: "Colaborador",
-    sortable: true,
-    filterType: 'text', // filtro de texto livre
-  },
-  {
-    key: "loja",
-    label: "Loja",
-    sortable: true,
-    align: "center",
-    filterType: 'select',
-    filterOptions: allLojas.filter(Boolean),
-    getFilterValue: (r) => r.loja || '—',
-  },
-  {
-    key: "statusName",
-    label: "Status Geral",
-    sortable: true,
-    align: "center",
-    render: (r: RowColab) => <StatusChip name={r.statusName} norm={r.statusNorm} />,
-    filterType: 'select',
-    // normaliza label (EM_DIA -> EM DIA)
-    filterOptions: allStatus.filter(Boolean).map(s => ({ value: s, label: s.replace(/_/g,' ') })),
-    getFilterValue: (r) => r.statusNorm, // filtra por norm (EM_DIA/PENDENTE/…)
-  },
-]), [allConsultores, allLojas, allStatus]);
+    {
+      key: "consultor",
+      label: "Consultor",
+      sortable: true,
+      filterType: 'select',
+      filterOptions: allConsultores.filter(Boolean),
+      getFilterValue: (r) => r.consultor || '—',
+    },
+    {
+      key: "nome",
+      label: "Colaborador",
+      sortable: true,
+      filterType: 'text',
+    },
+    {
+      key: "loja",
+      label: "Loja",
+      sortable: true,
+      align: "center",
+      filterType: 'select',
+      filterOptions: allLojas.filter(Boolean),
+      getFilterValue: (r) => r.loja || '—',
+    },
+    {
+      key: "statusName",
+      label: "Status Geral",
+      sortable: true,
+      align: "center",
+      render: (r: RowColab) => <StatusChip name={r.statusName} norm={r.statusNorm} />,
+      filterType: 'select',
+      filterOptions: allStatus.filter(Boolean).map(s => ({ value: s, label: s.replace(/_/g,' ') })),
+      getFilterValue: (r) => r.statusNorm,
+    },
+  ]), [allConsultores, allLojas, allStatus]);
 
-
-  // Mapeia seu estado de sort para o DataTable (status -> statusName)
+  // sort mapping
   const dtSortBy = useMemo<keyof RowColab | undefined>(() => {
     if (sortBy === 'status') return 'statusName';
     return sortBy as keyof RowColab | undefined;
@@ -285,147 +284,120 @@ export default function ColaboradoresDashboard() {
     else if (v === 'consultor' || v === 'nome' || v === 'loja') setSortBy(v);
   }
 
-  if (loading) return <div className="p-6">Carregando…</div>;
-  if (error)   return <div className="p-6 text-red-600">Erro: {error}</div>;
-
-  const donutDefs = [
-    { label: 'Em Dia',    key: 'EM_DIA',    count: statusCounts.emDia,    color: colorByNorm.get('EM_DIA') || '#22c55e' },
-    { label: 'Pendentes', key: 'PENDENTE',  count: statusCounts.pendente, color: colorByNorm.get('PENDENTE') || '#facc15' },
-    { label: 'Vencidos',  key: 'VENCIDO',   count: statusCounts.vencido,  color: colorByNorm.get('VENCIDO') || '#ef4444' },
-  ] as const;
-
-  return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold">Dashboard — Colaboradores</h1>
-
-      {/* Filtros globais */}
-      <div className="bg-white rounded shadow p-4 flex flex-wrap gap-4 items-end">
-        <div className="flex flex-col">
-          <label className="text-sm font-medium">Consultor</label>
-          <select className="border px-3 py-2 rounded" value={filtConsultor} onChange={e=>setFiltConsultor(e.target.value)}>
-            {allConsultores.map(c => (
-              <option key={`filt-consultor-${c || 'ALL'}`} value={c}>{c || 'Todos'}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col">
-          <label className="text-sm font-medium">Loja</label>
-          <select className="border px-3 py-2 rounded" value={filtLoja} onChange={e=>setFiltLoja(e.target.value)}>
-            {allLojas.map(l => (
-              <option key={`filt-loja-${l || 'ALL'}`} value={l}>{l || 'Todas'}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Donuts de status + Top Lojas */}
-      <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <DonutKpiCard
-            title={'Em Dia'}
-            count={statusCounts.total}
-            total={statusCounts.total}
-            color={'#3b82f6'}
-          />
-          {donutDefs.map(d => (
-            <DonutKpiCard
-              key={`donut-${d.key}`}
-              title={d.label}
-              count={d.count}
-              total={statusCounts.total}
-              color={d.color}
-            />
-          ))}
-        </div>
-
-        <div className="bg-white rounded shadow p-4">
-          <div className="h-[420px]">
-            <SmartBarChart
-              data={topLojasPendentes}
-              labelKey="loja"
-              valueKey="count"
-              valueColor={colorByNorm.get('PENDENTE') || '#facc15'}
-              title="Top 10 lojas com mais colaboradores pendentes"
-              height={400}
-              orientation="horizontal"
-              width={45}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Lista com filtros internos e ordenação */}
-      <div className="bg-white rounded shadow p-4">
-        {/* Filtros internos */}
-        <div className="flex flex-wrap gap-3 items-end mb-3">
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-600">Status</label>
-            <select className="border px-2 py-1 rounded" value={listStatus} onChange={e=>setListStatus(e.target.value)}>
-              {/* NÃO adicionar '' de novo, pois allStatus já começa com '' */}
-              {allStatus.map(s => (
-                <option key={`status-${s || 'ALL'}`} value={s}>
-                  {s ? s.replace('_',' ') : 'Todos'}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-600">Consultor</label>
-            <select className="border px-2 py-1 rounded" value={listConsultor} onChange={e=>setListConsultor(e.target.value)}>
-              {allConsultores.map(c => (
-                <option key={`list-consultor-${c || 'ALL'}`} value={c}>{c || 'Todos'}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-600">Loja</label>
-            <select className="border px-2 py-1 rounded" value={listLoja} onChange={e=>setListLoja(e.target.value)}>
-              {allLojas.map(l => (
-                <option key={`list-loja-${l || 'ALL'}`} value={l}>{l || 'Todas'}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col grow">
-            <label className="text-xs text-gray-600">Busca</label>
-            <input className="border px-2 py-1 rounded" value={listSearch} onChange={e=>setListSearch(e.target.value)} placeholder="Nome, consultor, loja…" />
-          </div>
-
-          {/* Ordenação externa (mantida, mas também habilitei sort no header do DataTable) */}
-          <div className="flex items-end gap-2 ml-auto">
-            <div className="flex flex-col">
-              <label className="text-xs text-gray-600">Ordenar por</label>
-              <select className="border px-2 py-1 rounded" value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
-                <option value="consultor">Consultor</option>
-                <option value="nome">Colaborador</option>
-                <option value="loja">Loja</option>
-                <option value="status">Status</option>
-              </select>
-            </div>
-            <div className="flex flex-col">
-              <label className="text-xs text-gray-600">Direção</label>
-              <select className="border px-2 py-1 rounded" value={sortDir} onChange={e=>setSortDir(e.target.value as any)}>
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* 🚀 DataTable genérico no lugar da <table> manual */}
-        <DataTableG<RowColab>
-          title="Colaboradores"
-          columns={columnsColab}
-          rows={tableRows}
-          showSearch={false}      // habilita busca global (além dos filtros por coluna)
-          borderType="cell"
-          compact
-          striped
-          stickyHeader
-          // ❌ remova sortBy/setSortBy/sortDir/setSortDir para usar ordenação interna
-          initialSortBy="consultor"
-          initialSortDir="asc"
-        />
-      </div>
+  // erro: mantém simples
+  if (error) return (
+    <div className="p-6 text-red-600">
+      Erro: {error}
     </div>
+  );
+
+  // ✅ aplica placeholders com LoadingSwitch
+  return (
+    <LoadingSwitch
+      isLoading={loading}
+      placeholder={
+        <div className="p-6 max-w-7xl mx-auto space-y-6" aria-busy="true">
+          <Placeholder.TextLine w={260} h={28} />
+          <Placeholder.Card>
+            <div className="flex flex-wrap gap-4 items-end">
+              <Placeholder.Filter />
+              <Placeholder.Filter />
+            </div>
+          </Placeholder.Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* KPIs/Donuts skeletons (4 cartões) */}
+            <Placeholder.KpiRow count={4} />
+            {/* Chart skeleton */}
+            <Placeholder.Chart height={400} />
+          </div>
+
+          {/* Tabela skeleton com 4 colunas principais */}
+          <Placeholder.Table cols={4} rows={12} schema="2fr 2fr 1fr 1fr" />
+        </div>
+      }
+    >
+      {/* CONTEÚDO REAL */}
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <h1 className="text-2xl font-bold">Dashboard — Colaboradores</h1>
+
+        {/* Filtros globais */}
+        <div className="bg-white rounded shadow p-4 flex flex-wrap gap-4 items-end">
+          <div className="flex flex-col">
+            <label className="text-sm font-medium">Consultor</label>
+            <select className="border px-3 py-2 rounded" value={filtConsultor} onChange={e=>setFiltConsultor(e.target.value)}>
+              {allConsultores.map(c => (
+                <option key={`filt-consultor-${c || 'ALL'}`} value={c}>{c || 'Todos'}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-sm font-medium">Loja</label>
+            <select className="border px-3 py-2 rounded" value={filtLoja} onChange={e=>setFiltLoja(e.target.value)}>
+              {allLojas.map(l => (
+                <option key={`filt-loja-${l || 'ALL'}`} value={l}>{l || 'Todas'}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Donuts de status + Top Lojas */}
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Você pode manter o primeiro como "Total" se preferir */}
+            <DonutKpiCard
+              title={'Em Dia'}
+              count={statusCounts.total}
+              total={statusCounts.total}
+              color={'#3b82f6'}
+            />
+            {[
+              { label: 'Em Dia', key: 'EM_DIA', count: statusCounts.emDia, color: colorByNorm.get('EM_DIA') || '#22c55e' },
+              { label: 'Pendentes', key: 'PENDENTE', count: statusCounts.pendente, color: colorByNorm.get('PENDENTE') || '#facc15' },
+              { label: 'Vencidos', key: 'VENCIDO', count: statusCounts.vencido, color: colorByNorm.get('VENCIDO') || '#ef4444' },
+            ].map(d => (
+              <DonutKpiCard
+                key={`donut-${d.key}`}
+                title={d.label}
+                count={d.count}
+                total={statusCounts.total}
+                color={d.color}
+              />
+            ))}
+          </div>
+
+          <div className="bg-white rounded shadow p-4">
+            <div className="h-[420px]">
+              <SmartBarChart
+                data={topLojasPendentes}
+                labelKey="loja"
+                valueKey="count"
+                valueColor={colorByNorm.get('PENDENTE') || '#facc15'}
+                title="Top 10 lojas com mais colaboradores pendentes"
+                height={400}
+                orientation="horizontal"
+                width={45}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Lista com filtros internos e ordenação */}
+        <div className="bg-white rounded shadow p-4">
+          <DataTableG<RowColab>
+            title="Colaboradores"
+            columns={columnsColab}
+            rows={tableRows}
+            showSearch={false}
+            borderType="cell"
+            compact
+            striped
+            stickyHeader
+            initialSortBy="consultor"
+            initialSortDir="asc"
+          />
+        </div>
+      </div>
+    </LoadingSwitch>
   );
 }

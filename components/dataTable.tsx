@@ -103,9 +103,11 @@ export function DataTableG<T>({
   const effectiveSortDir: 'asc' | 'desc' = sortDir ?? localSortDir
 
   // filtro de busca
-  const filteredRows: T[] = useMemo(() => {
-    let base = rows;
-     // 🔽 aplica filtros por coluna
+  // filtro de busca + filtros por coluna
+const filteredRows: T[] = useMemo(() => {
+  let base = rows;
+
+  // 🔽 aplica filtros por coluna
   const hasColumnFilters = columns.some(c => c.filterType);
   if (hasColumnFilters) {
     base = base.filter((r: T) => {
@@ -128,21 +130,24 @@ export function DataTableG<T>({
       return true;
     });
   }
-    if (!showSearch || !query.trim()) return rows
-    const q = query.trim().toLowerCase()
-    return rows.filter((r: T) =>
-      columns.some((c: Column<T>) => {
-        const val = c.render ? c.render(r) : (r as any)[c.key]
-        const text =
-          typeof val === 'string'
-            ? val
-            : typeof val === 'number'
-            ? String(val)
-            : val?.toString?.() ?? ''
-        return text.toLowerCase().includes(q)
-      })
-    )
-  }, [rows, query, showSearch, columns])
+
+  // 🔽 busca global (se habilitada)
+  if (!showSearch || !query.trim()) return base;
+  const q = query.trim().toLowerCase();
+  return base.filter((r: T) =>
+    columns.some((c: Column<T>) => {
+      const val = c.render ? c.render(r) : (r as any)[c.key];
+      const text =
+        typeof val === 'string'
+          ? val
+          : typeof val === 'number'
+          ? String(val)
+          : (val as any)?.toString?.() ?? '';
+      return text.toLowerCase().includes(q);
+    })
+  );
+}, [rows, columns, showSearch, query, colFilters]);
+
 
   // ordenação
   const sortedRows: T[] = useMemo(() => {
