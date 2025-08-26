@@ -2,13 +2,42 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseAdmin } from '@/lib/supabase';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  PieChart, Pie, Cell
-} from 'recharts';
+import DonutKpiCard from '@/components/DonutKpiCard';
+import SmartBarChart from '@/components/ChartBar';
+import { DataTableG } from '@/components/dataTable';
+import type { Column } from '@/components/dataTable';
+
+type RowColab = {
+  consultor: string;
+  nome: string;
+  loja: string;
+  statusName: string;   // EX.: "EM DIA", "PENDENTE"…
+  statusNorm: string;   // EX.: "EM_DIA", "PENDENTE"…
+};
 
 type Kind = { id: number; name: string; color_hex?: string | null };
 type Colab = { id: number; nome: string; loja: string | null; consultor: string | null; status_geral_id: number | null };
+const nf = new Intl.NumberFormat('pt-BR')
+
+const STATUS_COLORS: Record<string, string> = {
+  EM_DIA: "#22c55e",
+  PENDENTE: "#f59e0b",
+  VENCIDO: "#ef4444",
+  DEVOLVIDO: "#3b82f6",
+};
+
+// Chip inline (dispensa Pill externo)
+function StatusChip({ name, norm }: { name: string; norm: string }) {
+  const color = STATUS_COLORS[norm] ?? "#374151";
+  return (
+    <span
+      className="px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: `${color}22`, color }}
+    >
+      {name}
+    </span>
+  );
+}
 
 const NORM = (s?: string) =>
   (s || '')
@@ -58,7 +87,7 @@ export default function ColaboradoresDashboard() {
   const [listLoja, setListLoja] = useState<string>('');
   const [listSearch, setListSearch] = useState<string>('');
 
-  // Ordenação da lista
+  // Ordenação da lista (mantida para coerência com seu estado)
   const [sortBy, setSortBy] = useState<'consultor'|'nome'|'loja'|'status'>('consultor');
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc');
 
@@ -162,19 +191,19 @@ export default function ColaboradoresDashboard() {
   }, [filteredColabs, kindById]);
 
   // Tabela: aplica filtros internos e ordenação
-  const tableRows = useMemo(() => {
-    const base = filteredColabs.map(c => {
-      const kind = c.status_geral_id ? kindById.get(c.status_geral_id) : undefined;
-      const statusName = kind?.name || '—';
-      const statusNorm = kind ? NORM(kind.name) : '';
-      return {
-        consultor: (c.consultor?.trim() || '—'),
-        nome: c.nome,
-        loja: (c.loja?.trim() || '—'),
-        statusName,
-        statusNorm,
-      };
-    });
+  const tableRows: RowColab[] = useMemo(() => {
+  const base: RowColab[] = filteredColabs.map(c => {
+    const kind = c.status_geral_id ? kindById.get(c.status_geral_id) : undefined;
+    const statusName = kind?.name || '—';
+    const statusNorm = kind ? NORM(kind.name) : '';
+    return {
+      consultor: (c.consultor?.trim() || '—'),
+      nome: c.nome,
+      loja: (c.loja?.trim() || '—'),
+      statusName,
+      statusNorm,
+    };
+  });
 
     const fStatus = listStatus;
     const fConsult = listConsultor;
@@ -204,7 +233,57 @@ export default function ColaboradoresDashboard() {
     });
 
     return rows;
-  }, [filteredColabs, kindById, listStatus, listConsultor, listLoja, listSearch, sortBy, sortDir]);
+}, [filteredColabs, kindById, listStatus, listConsultor, listLoja, listSearch, sortBy, sortDir]);
+
+  // Definição das colunas para o DataTable
+  const columnsColab: Column<RowColab>[] = useMemo(() => ([
+  {
+    key: "consultor",
+    label: "Consultor",
+    sortable: true,
+    filterType: 'select',
+    filterOptions: allConsultores.filter(Boolean), // remove '' aqui (o "Todos" já é padrão)
+    getFilterValue: (r) => r.consultor || '—',
+  },
+  {
+    key: "nome",
+    label: "Colaborador",
+    sortable: true,
+    filterType: 'text', // filtro de texto livre
+  },
+  {
+    key: "loja",
+    label: "Loja",
+    sortable: true,
+    align: "center",
+    filterType: 'select',
+    filterOptions: allLojas.filter(Boolean),
+    getFilterValue: (r) => r.loja || '—',
+  },
+  {
+    key: "statusName",
+    label: "Status Geral",
+    sortable: true,
+    align: "center",
+    render: (r: RowColab) => <StatusChip name={r.statusName} norm={r.statusNorm} />,
+    filterType: 'select',
+    // normaliza label (EM_DIA -> EM DIA)
+    filterOptions: allStatus.filter(Boolean).map(s => ({ value: s, label: s.replace(/_/g,' ') })),
+    getFilterValue: (r) => r.statusNorm, // filtra por norm (EM_DIA/PENDENTE/…)
+  },
+]), [allConsultores, allLojas, allStatus]);
+
+
+  // Mapeia seu estado de sort para o DataTable (status -> statusName)
+  const dtSortBy = useMemo<keyof RowColab | undefined>(() => {
+    if (sortBy === 'status') return 'statusName';
+    return sortBy as keyof RowColab | undefined;
+  }, [sortBy]);
+
+  function handleDtSortBy(v: keyof RowColab) {
+    if (v === 'statusName') setSortBy('status');
+    else if (v === 'consultor' || v === 'nome' || v === 'loja') setSortBy(v);
+  }
 
   if (loading) return <div className="p-6">Carregando…</div>;
   if (error)   return <div className="p-6 text-red-600">Erro: {error}</div>;
@@ -239,44 +318,45 @@ export default function ColaboradoresDashboard() {
         </div>
       </div>
 
-      {/* Donuts de status */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <DonutCard
-          key="donut-total"
-          title={'Total de Colaboradores'}
-          count={statusCounts.total}
-          total={statusCounts.total}
-          color={'#3b82f6'}
-        />
-        {donutDefs.map(d => (
-          <DonutCard
-            key={`donut-${d.key}`}
-            title={d.label}
-            count={d.count}
+      {/* Donuts de status + Top Lojas */}
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <DonutKpiCard
+            title={'Em Dia'}
+            count={statusCounts.total}
             total={statusCounts.total}
-            color={d.color}
+            color={'#3b82f6'}
           />
-        ))}
-      </div>
+          {donutDefs.map(d => (
+            <DonutKpiCard
+              key={`donut-${d.key}`}
+              title={d.label}
+              count={d.count}
+              total={statusCounts.total}
+              color={d.color}
+            />
+          ))}
+        </div>
 
-      {/* Top 10 Lojas (Pendentes) */}
-      <div className="bg-white rounded shadow p-4">
-        <h3 className="font-semibold mb-2">Top 10 lojas com mais colaboradores pendentes</h3>
-        <div className="h-[420px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={topLojasPendentes} layout="vertical" margin={{ left: 16, right: 24, top: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" />
-              <YAxis dataKey="loja" type="category" width={140} />
-              <Tooltip />
-              <Bar dataKey="count" fill={colorByNorm.get('PENDENTE') || '#facc15'} radius={[4,4,4,4]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="bg-white rounded shadow p-4">
+          <div className="h-[420px]">
+            <SmartBarChart
+              data={topLojasPendentes}
+              labelKey="loja"
+              valueKey="count"
+              valueColor={colorByNorm.get('PENDENTE') || '#facc15'}
+              title="Top 10 lojas com mais colaboradores pendentes"
+              height={400}
+              orientation="horizontal"
+              width={45}
+            />
+          </div>
         </div>
       </div>
 
       {/* Lista com filtros internos e ordenação */}
       <div className="bg-white rounded shadow p-4">
+        {/* Filtros internos */}
         <div className="flex flex-wrap gap-3 items-end mb-3">
           <div className="flex flex-col">
             <label className="text-xs text-gray-600">Status</label>
@@ -310,6 +390,7 @@ export default function ColaboradoresDashboard() {
             <input className="border px-2 py-1 rounded" value={listSearch} onChange={e=>setListSearch(e.target.value)} placeholder="Nome, consultor, loja…" />
           </div>
 
+          {/* Ordenação externa (mantida, mas também habilitei sort no header do DataTable) */}
           <div className="flex items-end gap-2 ml-auto">
             <div className="flex flex-col">
               <label className="text-xs text-gray-600">Ordenar por</label>
@@ -330,80 +411,20 @@ export default function ColaboradoresDashboard() {
           </div>
         </div>
 
-        <div className="overflow-auto">
-          <table className="min-w-full text-sm border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-2 py-1 border text-left">Consultor</th>
-                <th className="px-2 py-1 border text-left">Colaborador</th>
-                <th className="px-2 py-1 border text-left">Loja</th>
-                <th className="px-2 py-1 border text-left">Status Geral</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((r, i) => (
-                <tr key={`row-${r.nome}-${i}`} className="hover:bg-gray-50">
-                  <td className="px-2 py-1 border">{r.consultor}</td>
-                  <td className="px-2 py-1 border">{r.nome}</td>
-                  <td className="px-2 py-1 border">{r.loja}</td>
-                  <td className="px-2 py-1 border">
-                    <span
-                      className="px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: (colorByNorm.get(r.statusNorm) || '#e5e7eb') + '33',
-                        color: colorByNorm.get(r.statusNorm) || '#374151',
-                      }}
-                    >
-                      {r.statusName}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {tableRows.length === 0 && (
-                <tr><td colSpan={4} className="px-2 py-8 text-center text-gray-500">Nenhum colaborador encontrado.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DonutCard({ title, count, total, color }:{
-  title: string; count: number; total: number; color: string;
-}) {
-  const pct = total ? Math.round((count / total) * 100) : 0;
-  const data = [
-    { name: title, value: count },
-    { name: 'outros', value: Math.max(total - count, 0) },
-  ];
-  return (
-    <div className="bg-white rounded shadow p-4 text-center">
-      <h3 className="font-semibold mb-2">{title}</h3>
-      <div className="relative h-40">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              cx="50%" cy="50%"
-              innerRadius={50}
-              outerRadius={70}
-              startAngle={90}
-              endAngle={-270}
-              isAnimationActive={false}
-              paddingAngle={2}
-            >
-              <Cell fill={color} />
-              <Cell fill={GREY} />
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-2xl font-bold">{pct}%</span>
-          <span className="text-sm text-gray-500">{count.toLocaleString()}</span>
-        </div>
+        {/* 🚀 DataTable genérico no lugar da <table> manual */}
+        <DataTableG<RowColab>
+          title="Colaboradores"
+          columns={columnsColab}
+          rows={tableRows}
+          showSearch={false}      // habilita busca global (além dos filtros por coluna)
+          borderType="cell"
+          compact
+          striped
+          stickyHeader
+          // ❌ remova sortBy/setSortBy/sortDir/setSortDir para usar ordenação interna
+          initialSortBy="consultor"
+          initialSortDir="asc"
+        />
       </div>
     </div>
   );

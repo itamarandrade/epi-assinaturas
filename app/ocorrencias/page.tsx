@@ -21,14 +21,38 @@ import {
 import HeatmapAreaNatureza from '@/components/HeatmapAreaNatureza'
 import HeatmapHoraDia from '@/components/HeatmapHoraDia'
 import {
-  ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, BarChart, Bar, PieChart, Pie, Cell, Legend
+  ResponsiveContainer,
+  LineChart, 
+  Line, 
+  CartesianGrid, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  BarChart, 
+  Bar, 
+  PieChart, 
+  Pie, 
+  Cell, 
+  Legend,
+  Brush,
+  LabelList,
+  Label
+
 } from 'recharts'
+import DonutChart from '@/components/ChartPie';
+import SmartBarChart from '@/components/ChartBar';
+
+
+
+type Ponto = { dt: string | Date; ocorrencias: number };
+const nf = new Intl.NumberFormat('pt-BR')
+
 
 const COLORS = ['#111827','#22c55e','#f59e0b','#ef4444','#3b82f6','#10b981','#a855f7','#14b8a6','#6366f1','#f97316']
 
 export default function PageOcorrencias() {
   const hoje = dayjs().endOf('day')
-  const inicioMes = dayjs().startOf('month')
+  const inicioMes = dayjs("2024-01-01T00:00:00")
 
   const [filtros, setFiltros] = useState<Filtros>({ de: inicioMes.toISOString(), ate: hoje.toISOString() })
   const [facets, setFacets] = useState<any>({ unidades: [], areas: [], naturezas: [], operacoes: [], estacoes: [], situacoes: [], partes: [], agentes: [] })
@@ -47,6 +71,8 @@ export default function PageOcorrencias() {
   const [afast, setAfast] = useState<{ total_registros: number; total_dias: number; media_dias: number; mediana_dias: number } | null>(null)
   const [heatHoraDia, setHeatHoraDia] = useState<{ weekday:number; hour:number; qtd:number }[]>([])
   const [heatAreaNat, setHeatAreaNat] = useState<{ area:string; natureza:string; qtd:number }[]>([])
+  const [alto, setAlto] = useState(260);
+
 
   useEffect(() => {
     (async () => {
@@ -93,6 +119,11 @@ export default function PageOcorrencias() {
 
   const totalPeriodo = useMemo(() => serie.reduce((acc, x) => acc + x.ocorrencias, 0), [serie])
   const resetFiltros = () => setFiltros({ de: inicioMes.toISOString(), ate: hoje.toISOString() })
+
+  const dataTipo = porTipo.map(x => ({
+  name: x.tipo || '(sem tipo)',
+  value: x.qtd,
+  }));
 
   return (
     <div className="p-6 space-y-6">
@@ -214,66 +245,145 @@ export default function PageOcorrencias() {
       {/* Série diária */}
        <div className="bg-white p-4 rounded-xl shadow">
         <h2 className="text-lg font-semibold mb-2">Ocorrências por dia</h2>
-        <ResponsiveContainer width="100%" height={260}>
+         
+        <ResponsiveContainer width="100%" height={alto}>
           <LineChart data={serie || []}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="dt" tick={{ fontSize: 12 }} />
+            <XAxis 
+            dataKey="dt" 
+            tick={{ fontSize: 12 }} 
+            minTickGap={20}
+            tickFormatter={(v: string) => dayjs(v).format('DD/MM/YYYY')}
+            />
             <YAxis allowDecimals={false} />
-            <Tooltip />
-            <Line type="monotone" dataKey="ocorrencias" stroke="#111827" dot={false} />
+            <Tooltip
+            labelFormatter={(v: string) => dayjs(v).format('DD/MM/YYYY')}
+            formatter={(val: number) => [val, 'Ocorrências']}
+          />
+            <Line 
+            type="monotone" 
+            dataKey="ocorrencias" 
+            stroke="#0553faff" 
+            dot={{r: 4}}
+            
+            label={({ x, y, value }) => (
+        <text
+          x={x}
+          y={y - 10}
+          textAnchor="middle"
+          fontSize={11}
+          fill="#111827"
+        >
+          {value}
+        </text>
+      )} />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
       {/* Top Unidades */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <h2 className="text-lg font-semibold mb-2">Top Unidades</h2>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={topUnidades || []}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="unidade" hide={(topUnidades?.length ?? 0) > 8} />
-            <YAxis allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="qtd" fill="#111827" />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+        <div className="bg-white p-4 rounded-xl shadow">
+          <h2 className="text-lg font-semibold mb-2">Top Unidades</h2>
+          <SmartBarChart
+            data={topUnidades}
+            labelKey="unidade"
+            valueKey="qtd"
+            height={alto}
+            title="Unidades com mais ocorrências"
+            valueColor="#0553faff"
+            orientation="vertical"
+          />
+        </div>
       </div>
       
       {/* Distribuições atemporais */}
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white p-4 rounded-xl shadow">
-            <h2 className="text-lg font-semibold mb-2">Top Unidades</h2>
-        <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={porParte}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="parte_corpo" hide={(porParte?.length ?? 0) > 8} />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="qtd" fill="#111827" />
-            </BarChart>
-        </ResponsiveContainer>
+            <SmartBarChart
+              data={porParte}
+              labelKey="parte_corpo"
+              valueKey="qtd"
+              height={360}
+              title="Partes do corpo mais afetadas"
+              valueColor="#0553faff"
+              orientation="horizontal"
+            />
         </div>
         <div className="bg-white p-4 rounded-xl shadow">
-            <h2 className="text-lg font-semibold mb-2">Por Agende Causador</h2>
-        <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={(porAgente || []).map(x => ({ ...x, agente_causador: x.agente_causador || '(sem agente)' }))}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="agente_causador" hide={(porAgente?.length ?? 0) > 8} />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="qtd" fill="#111827" />
-            </BarChart>
-        </ResponsiveContainer>
+            <SmartBarChart
+            data={porAgente}
+            labelKey="agente_causador"
+            valueKey="qtd"
+            height={360}
+            title="Agentes causadores mais frequentes" 
+            valueColor="#0553faff"
+            orientation="horizontal"
+            />
         </div>
     </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartPie title="Por Ocorrência (Tipo)" data={porTipo.map(x => ({ name: x.tipo || '(sem tipo)', value: x.qtd }))} />
-        <ChartPie title="Por Operação" data={porOperacao.map(x => ({ name: x.operacao || '(sem operação)', value: x.qtd }))} />
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="bg-white p-4 rounded-xl shadow">
+        <SmartBarChart
+          data={porSituacao}
+          labelKey="situacao_geradora"
+          valueKey="qtd"
+          height={360}
+          title="Situações geradoras mais comuns"
+          valueColor="#0553faff"
+          orientation="horizontal"
+        />
+      </div>
+    <div className="bg-white p-4 rounded-xl shadow">
+      <h3 className="mb-1">Por Operação</h3>
+        <DonutChart
+          data={porOperacao.map(x => ({ name: x.operacao || '(sem operação)', value: x.qtd }))}
+          height={350}
+          innerRadiusPct={0.58}
+          outerRadiusPct={0.82}
+          showTotalInCenter
+          centerLabel="Operações"
+          totalFormatter={(n) => n.toLocaleString('pt-BR')}
+          sliceLabel                 // 👈 mostra % nas fatias (agora sempre
+          showLegend                 // 👈 legenda interna ao componente)
+          legendShowPercent={false}  // só número inteiro; mude para true se quiser (15 — 100%)
+          
+        />
+    </div>
     </div>
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartPie title="Por Estação/Máquina" data={porEstacao.map(x => ({ name: x.estacao_maquina || '(sem estação)', value: x.qtd }))} />
-        <ChartPie title="Por Situação Geradora" data={porSituacao.map(x => ({ name: x.situacao_geradora || '(sem situação)', value: x.qtd }))} />
+      <div className="bg-white p-4 rounded-xl shadow">
+        <h3 className="mb-1">Por Estção ou Maquina</h3>
+        <DonutChart
+          data={porEstacao.map(x => ({ name: x.estacao_maquina || '(sem estação)', value: x.qtd }))}
+          height={350}
+          innerRadiusPct={0.58}
+          outerRadiusPct={0.82}
+          showTotalInCenter
+          centerLabel="Estações/Máquinas"
+          totalFormatter={(n) => n.toLocaleString('pt-BR')}
+          sliceLabel                 // 👈 mostra % nas fatias (agora sempre)
+          showLegend                 // 👈 legenda interna ao componente
+          legendShowPercent={false}  // só número inteiro; mude para true se quiser (15 — 100%)
+          legendCols={1}
+          />
+      </div>
+      <div className="bg-white p-4 rounded-xl shadow">
+      <h3 className="mb-1">Por Ocorrência (Tipo)</h3>
+      <DonutChart
+        data={porTipo.map(x => ({ name: x.tipo || '(sem tipo)', value: x.qtd }))}
+        height={350}
+        innerRadiusPct={0.58}
+        outerRadiusPct={0.82}
+        showTotalInCenter
+        centerLabel="Tipos de ocorrencia"
+        totalFormatter={(n) => n.toLocaleString('pt-BR')}
+        sliceLabel                 // 👈 mostra % nas fatias (agora sempre)
+        showLegend                 // 👈 legenda interna ao componente
+        legendShowPercent={false}  // só número inteiro; mude para true se quiser (15 — 100%)
+        legendCols={1}
+      />
+    </div>
+      
     </div>
    
 

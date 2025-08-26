@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  PieChart, Pie, Cell, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip
-} from 'recharts';
+
+import DonutChart from '@/components/ChartPie';
+import SmartBarChart from '@/components/ChartBar';
+import TabelaUniversal, { DataTableG } from '@/components/dataTable';
+import type { Column } from '@/components/dataTable';
+
 import {
   getResumoColaboradores,
   getRankingLojaColaboradores,
@@ -16,6 +18,27 @@ import {
   type RankingConsultor,
   type DetalheLoja,
 } from '@/services/epiDashboardService';
+
+
+type ConsultorRow = {
+  consultor: string;
+  emDia: number;
+  pendente: number;
+  vencido: number;
+  total: number;
+  pctEmDia: number;
+};
+
+type LojaRow = {
+  loja: string;
+  emDia: number;
+  pendente: number;
+  vencido: number;
+  total: number;
+  pctEmDia: number;
+};
+
+const nf = new Intl.NumberFormat('pt-BR');
 
 const BASE_COLORS: Record<string, string> = {
   'EM DIA':   '#22c55e',
@@ -49,6 +72,18 @@ export default function HomeDashboard() {
     }
   };
 
+  // 🔧 Adapta a fonte (ConsultorComPct[]) para o formato da tabela (ConsultorRow[])
+  const rowsConsultor: ConsultorRow[] = useMemo(() => {
+    return tabelaConsultor.map(r => ({
+      consultor: r.consultor,
+      emDia: r.emDia,
+      pendente: r.pendente,
+      vencido: r.vencido,
+      total: r.emDia + r.pendente + r.vencido,
+      pctEmDia: r.pctEmDia,
+    }));
+  }, [tabelaConsultor]);
+
   // carregar opções de filtro
   useEffect(() => {
     getOpcoesFiltros().then(setOpcoes).catch(console.error);
@@ -64,7 +99,6 @@ export default function HomeDashboard() {
 
     getRankingLojaColaboradores(filters)
       .then(rows => {
-        // garante top 10 por problemas (pend+venc)
         const top10 = [...rows]
           .sort((a, b) => (b.problemas || 0) - (a.problemas || 0))
           .slice(0, 10);
@@ -96,7 +130,7 @@ export default function HomeDashboard() {
             const totalB = b.emDia + b.pendente + b.vencido;
             const pctA   = totalA ? a.emDia / totalA : 0;
             const pctB   = totalB ? b.emDia / totalB : 0;
-            return pctB - pctA;   // maior % primeiro
+            return pctB - pctA;
           });
           setDetalheLojaConsultor(sorted);
         })
@@ -121,11 +155,11 @@ export default function HomeDashboard() {
     [dadosDonut]
   );
 
-  // totais da tabela de consultores
+  // totais agregados (para cards externos; o rodapé da tabela é calculado pelo getTotals)
   const totaisConsultores = useMemo(() => {
-    const emDia = tabelaConsultor.reduce((acc, r) => acc + r.emDia, 0);
-    const pendente = tabelaConsultor.reduce((acc, r) => acc + r.pendente, 0);
-    const vencido = tabelaConsultor.reduce((acc, r) => acc + r.vencido, 0);
+    const emDia    = tabelaConsultor.reduce<number>((acc: number, r: ConsultorComPct) => acc + r.emDia, 0);
+    const pendente = tabelaConsultor.reduce<number>((acc: number, r: ConsultorComPct) => acc + r.pendente, 0);
+    const vencido  = tabelaConsultor.reduce<number>((acc: number, r: ConsultorComPct) => acc + r.vencido, 0);
     const total = emDia + pendente + vencido;
     const pctEmDiaGeral = total ? +(100 * emDia / total).toFixed(1) : 0;
     return { emDia, pendente, vencido, total, pctEmDiaGeral };
@@ -137,6 +171,60 @@ export default function HomeDashboard() {
     if (pct >= 50) return '#f97316';
     return BASE_COLORS['VENCIDO'];
   };
+
+  // gradiente de vermelho para o ranking
+  function getRedByValue(value: number, min: number, max: number) {
+    if (max === min) return '#fca5a5';
+    const ratio = (value - min) / (max - min);
+    const start = [252, 202, 202]; // #fccaca
+    const end = [185, 28, 28];     // #b91c1c
+    const r = Math.round(start[0] + (end[0] - start[0]) * ratio);
+    const g = Math.round(start[1] + (end[1] - start[1]) * ratio);
+    const b = Math.round(start[2] + (end[2] - start[2]) * ratio);
+    return `rgb(${r},${g},${b})`;
+  }
+  const valores = dadosBar.map(d => d.problemas || 0);
+  const minVal = Math.min(...valores);
+  const maxVal = Math.max(...valores);
+
+  // =========================
+  // DataTable: Colunas e Linhas
+  // =========================
+  const columnsConsultor: Column<ConsultorRow>[] = useMemo(() => ([
+    { key: 'consultor', label: 'Consultor', align: 'left' },
+    { key: 'emDia',     label: 'Em Dia',   align: 'right', render: (r: ConsultorRow) => nf.format(r.emDia) },
+    { key: 'pendente',  label: 'Pendente', align: 'right', render: (r: ConsultorRow) => nf.format(r.pendente) },
+    { key: 'vencido',   label: 'Vencidos', align: 'right', render: (r: ConsultorRow) => nf.format(r.vencido) },
+    { key: 'total',     label: 'Total',    align: 'right', render: (r: ConsultorRow) => nf.format(r.total) },
+    {
+      key: 'pctEmDia',
+      label: '% Em Dia',
+      align: 'right',
+      render: (r: ConsultorRow) => <span style={{ color: getPctColor(r.pctEmDia) }}>{r.pctEmDia}%</span>,
+    },
+  ]), []);
+
+  const rowsLoja: LojaRow[] = useMemo(() => {
+    return detalheLojaConsultor.map((r) => {
+      const total = r.emDia + r.pendente + r.vencido;
+      const pctEmDia = total ? +(100 * r.emDia / total).toFixed(1) : 0;
+      return { loja: r.loja, emDia: r.emDia, pendente: r.pendente, vencido: r.vencido, total, pctEmDia };
+    });
+  }, [detalheLojaConsultor]);
+
+  const columnsLoja: Column<LojaRow>[] = useMemo(() => ([
+    { key: 'loja',      label: 'Loja',     align: 'left' },
+    { key: 'emDia',     label: 'Em Dia',   align: 'right', render: (r: LojaRow) => nf.format(r.emDia) },
+    { key: 'pendente',  label: 'Pendente', align: 'right', render: (r: LojaRow) => nf.format(r.pendente) },
+    { key: 'vencido',   label: 'Vencidos', align: 'right', render: (r: LojaRow) => nf.format(r.vencido) },
+    { key: 'total',     label: 'Total',    align: 'right', render: (r: LojaRow) => nf.format(r.total) },
+    {
+      key: 'pctEmDia',
+      label: '% Em Dia',
+      align: 'right',
+      render: (r: LojaRow) => <span style={{ color: getPctColor(r.pctEmDia) }}>{r.pctEmDia}%</span>,
+    },
+  ]), []);
 
   return (
     <div className="space-y-6 p-4">
@@ -160,117 +248,90 @@ export default function HomeDashboard() {
       {/* DONUT + BAR */}
       <div className="flex gap-8">
         {/* DONUT */}
-        <div className="flex-1">
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={dadosDonut}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={60}
-                outerRadius={100}
-                labelLine={false}
-                label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              >
-                {dadosDonut.map((d, i) => (
-                  <Cell key={`slice-${d.name || 'vazio'}-${i}`} fill={colorHash(d.name)} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="mt-2 text-center">
-            <div className="font-bold text-lg">{totalDonut}</div>
-            <div className="text-sm text-gray-600">Colaboradores</div>
-          </div>
+        <div className="flex-1 shadow-sm p-4 rounded-xl">
+          <DonutChart
+            data={dadosDonut}
+            innerRadiusPct={0.6}
+            outerRadiusPct={0.82}
+            highlightMax={true}
+            gradientByRank={true}
+            onSliceClick={(d) => setFiltConsultor(d.name)}
+            ariaLabel="Gráfico de rosca (donut) - Resumo de colaboradores"
+            defaultColors={PALETTE}
+            colorByKey={BASE_COLORS}
+            fixedOrder={['EM DIA', 'PENDENTE', 'VENCIDO']}
+            enforceStatusOrder={true}
+            sliceLabel={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+            showLegend={true}
+            legendShowPercent={true}
+            legendCols={2}
+          />
         </div>
 
-        {/* BAR VERTICAL (TOP 10) */}
-        <div className="flex-1">
-          <label className="text-sm font-medium center">Top Lojas (10)</label>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={dadosBar} layout="vertical" margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="loja" width={120} />
-              <Tooltip />
-              <Bar dataKey="problemas" name="Problemas (Pend+Venc)" />
-            </BarChart>
-          </ResponsiveContainer>
+        {/* BAR HORIZONTAL (TOP 10) */}
+        <div className="flex-1 shadow-sm p-4 rounded-xl">
+          <SmartBarChart
+            data={dadosBar}
+            labelKey="loja"
+            valueKey="problemas"
+            valueColorScale={getRedByValue}
+            valueColor="#ef4444"
+            valueLabel="Problemas (Pend+Venc)"
+            height={Math.max(300, dadosBar.length * 36)}
+            orientation="horizontal"
+            tipo="loja"
+            title="Ranking de Lojas"
+            formatValue={(n) => nf.format(Number(n) || 0)}
+            width={30}
+          />
         </div>
       </div>
 
-      {/* TABELAS */}
-      {!filtConsultor ? (
-        <table className="w-full table-auto border-collapse">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="p-2 text-left">Consultor</th>
-              <th className="p-2 text-right">Em Dia</th>
-              <th className="p-2 text-right">Pendente</th>
-              <th className="p-2 text-right">Vencidos</th>
-              <th className="p-2 text-right">Total</th>
-              <th className="p-2 text-right">% Em Dia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tabelaConsultor.map((r, i) => (
-              <tr key={`consultor-${r.consultor || 'vazio'}-${i}`}>
-                <td className="p-2">{r.consultor}</td>
-                <td className="p-2 text-right">{r.emDia}</td>
-                <td className="p-2 text-right">{r.pendente}</td>
-                <td className="p-2 text-right">{r.vencido}</td>
-                <td className="p-2 text-right">{r.emDia + r.pendente + r.vencido}</td>
-                <td className="p-2 text-right font-semibold" style={{ color: getPctColor(r.pctEmDia) }}>
-                  {r.pctEmDia}%
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          {/* TOTAIS */}
-          <tfoot>
-            <tr className="bg-gray-50 font-semibold">
-              <td className="p-2 text-right">Totais</td>
-              <td className="p-2 text-right">{totaisConsultores.emDia}</td>
-              <td className="p-2 text-right">{totaisConsultores.pendente}</td>
-              <td className="p-2 text-right">{totaisConsultores.vencido}</td>
-              <td className="p-2 text-right">{totaisConsultores.total}</td>
-              <td className="p-2 text-right" style={{ color: getPctColor(totaisConsultores.pctEmDiaGeral) }}>
-                {totaisConsultores.pctEmDiaGeral}%
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      ) : (
-        <table className="w-full table-auto border-collapse">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="p-2 text-left">Loja</th>
-              <th className="p-2 text-right">Em Dia</th>
-              <th className="p-2 text-right">Pendente</th>
-              <th className="p-2 text-right">Vencidos</th>
-              <th className="p-2 text-right">Total</th>
-              <th className="p-2 text-right">% Em Dia</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detalheLojaConsultor.map((r, i) => {
-              const total = r.emDia + r.pendente + r.vencido;
-              const pctEmDia = total ? +(100 * r.emDia / total).toFixed(1) : 0;
-              return (
-                <tr key={`loja-${r.loja || 'vazio'}-${i}`}>
-                  <td className="p-2">{r.loja}</td>
-                  <td className="p-2 text-right">{r.emDia}</td>
-                  <td className="p-2 text-right">{r.pendente}</td>
-                  <td className="p-2 text-right">{r.vencido}</td>
-                  <td className="p-2 text-right">{total}</td>
-                  <td className="p-2 text-right font-semibold" style={{ color: getPctColor(pctEmDia) }}>
-                    {pctEmDia}%
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* TABELA DE CONSULTORES (com totais) */}
+      <div className="bg-white rounded shadow p-4">
+        <h3 className="font-semibold mb-3">Resumo por Consultor</h3>
+        <DataTableG<ConsultorRow>
+          title="Resumo por Consultor"
+          columns={columnsConsultor}
+          rows={rowsConsultor}
+          striped
+          compact
+          stickyHeader
+          borderType="row"
+          showTotals
+          getTotals={(rows: ConsultorRow[]) => {
+            const sum = <K extends keyof ConsultorRow>(k: K) =>
+              rows.reduce<number>((acc, r) => acc + (Number(r[k]) || 0), 0);
+
+            const total = sum('total') || (sum('emDia') + sum('pendente') + sum('vencido'));
+            const pctGeral = total ? Number(((sum('emDia') * 100) / total).toFixed(1)) : 0;
+
+            return {
+              consultor: 'Totais',
+              emDia: nf.format(sum('emDia')),
+              pendente: nf.format(sum('pendente')),
+              vencido: nf.format(sum('vencido')),
+              total: nf.format(total),
+              pctEmDia: <span style={{ color: getPctColor(pctGeral) }}>{pctGeral}%</span>,
+            };
+          }}
+        />
+      </div>
+
+      {/* TABELA DETALHE POR LOJA (quando um consultor for selecionado) */}
+      {filtConsultor && (
+        <div className="bg-white rounded shadow p-4">
+          <h3 className="font-semibold mb-3">Detalhe por Loja — {filtConsultor}</h3>
+          <DataTableG<LojaRow>
+            title={`Detalhe por Loja — ${filtConsultor}`}
+            columns={columnsLoja}
+            rows={rowsLoja}
+            striped
+            compact
+            stickyHeader
+            borderType="row"
+          />
+        </div>
       )}
     </div>
   );
