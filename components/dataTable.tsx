@@ -12,8 +12,8 @@ export type Column<T> = {
   className?: string
   width?: number | string
   sortable?: boolean
-  render?: (row: T) => ReactNode
-    filterType?: 'text' | 'select'
+  render?: (row: T) => ReactNode,
+  filterType?: 'text' | 'select',
   filterOptions?: Array<{ value: string; label?: string }> | string[]
   getFilterValue?: (row: T) => string // valor usado na filtragem (se diferente do campo)
 
@@ -402,158 +402,149 @@ function StatusPill({ status }: { status: Status }) {
   return <span className={`inline-flex items-center rounded-full ${cls.bg} ${cls.fg} px-2 py-0.5 text-xs font-medium`}>{status}</span>
 }
 
-export default function TabelaUniversal(props: TabelaUniversalProps) {
-  /* =============== VARIAÇÃO: CONSULTOR =============== */
-  if (props.variant === 'consultores') {
-    const { rows, title = 'Resumo por Consultor' } = props
+function TabelaConsultores({ rows, title = 'Resumo por Consultor' }: PropsConsultores) {
+  const columns: Column<RowConsultor>[] = useMemo(() => ([
+    { key: 'consultor', label: 'Consultor', sortable: true },
+    { key: 'emDia',     label: 'Em Dia',   align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.emDia) },
+    { key: 'pendente',  label: 'Pendente', align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.pendente) },
+    { key: 'vencido',   label: 'Vencidos', align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.vencido) },
+    { key: 'total',     label: 'Total',    align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.total) },
+    {
+      key: 'pctEmDia',
+      label: '% Em Dia',
+      align: 'right',
+      sortable: true,
+      render: (r: RowConsultor) => <span style={{ color: pctColor(r.pctEmDia) }}>{r.pctEmDia}%</span>,
+    },
+  ]), [])
 
-    const columns: Column<RowConsultor>[] = useMemo(() => ([
-      { key: 'consultor', label: 'Consultor', sortable: true },
-      { key: 'emDia',     label: 'Em Dia',   align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.emDia) },
-      { key: 'pendente',  label: 'Pendente', align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.pendente) },
-      { key: 'vencido',   label: 'Vencidos', align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.vencido) },
-      { key: 'total',     label: 'Total',    align: 'right', sortable: true, render: (r: RowConsultor) => nf.format(r.total) },
-      {
-        key: 'pctEmDia',
-        label: '% Em Dia',
-        align: 'right',
-        sortable: true,
-        render: (r: RowConsultor) => <span style={{ color: pctColor(r.pctEmDia) }}>{r.pctEmDia}%</span>,
-      },
-    ]), [])
+  return (
+    <DataTableG<RowConsultor>
+      title={title}
+      columns={columns}
+      rows={rows}
+      striped
+      compact
+      stickyHeader
+      borderType="row"
+      initialSortBy="consultor"
+      initialSortDir="asc"
+      showTotals
+      getTotals={(rows: RowConsultor[]) => {
+        const sum = <K extends keyof RowConsultor>(k: K) =>
+          rows.reduce<number>((acc: number, r: RowConsultor) => acc + Number(r[k] ?? 0), 0)
 
-    return (
-      <DataTableG<RowConsultor>
+        const total = sum('total') || (sum('emDia') + sum('pendente') + sum('vencido'))
+        const pct = total ? Number(((sum('emDia') * 100) / total).toFixed(1)) : 0
+
+        return {
+          consultor: 'Totais',
+          emDia: nf.format(sum('emDia')),
+          pendente: nf.format(sum('pendente')),
+          vencido: nf.format(sum('vencido')),
+          total: nf.format(total),
+          pctEmDia: <span style={{ color: pctColor(pct) }}>{pct}%</span>,
+        }
+      }}
+    />
+  )
+}
+
+function TabelaColaboradores({ rows, lojas, consultores, title = '' }: PropsColaboradores) {
+  const [status, setStatus] = useState<'Todos' | Status>('Todos')
+  const [fConsultor, setFConsultor] = useState<string>('Todos')
+  const [fLoja, setFLoja] = useState<string>('Todas')
+  const [busca, setBusca] = useState<string>('')
+  const [sortBy, setSortBy] = useState<keyof RowColab>('consultor')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const filtered: RowColab[] = useMemo(() => {
+    const q = busca.trim().toLowerCase()
+    return rows.filter((r: RowColab) => {
+      if (status !== 'Todos' && r.status_geral !== status) return false
+      if (fConsultor !== 'Todos' && r.consultor !== fConsultor) return false
+      if (fLoja !== 'Todas' && r.loja !== fLoja) return false
+      if (!q) return true
+      const hay = `${r.colaborador} ${r.consultor} ${r.loja}`.toLowerCase()
+      return hay.includes(q)
+    })
+  }, [rows, status, fConsultor, fLoja, busca])
+
+  const columns: Column<RowColab>[] = useMemo(() => ([
+    { key: 'consultor',   label: 'Consultor',   sortable: true },
+    { key: 'colaborador', label: 'Colaborador', sortable: true },
+    { key: 'loja',        label: 'Loja',        sortable: true },
+    { key: 'status_geral',label: 'Status Geral',sortable: true, render: (r: RowColab) => <StatusPill status={r.status_geral} /> },
+  ]), [])
+
+  return (
+    <div className="space-y-3">
+      {/* filtros */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Status</label>
+          <select className="w-full border rounded px-2 py-2" value={status} onChange={(e) => setStatus(e.target.value as any)}>
+            {['Todos','EM DIA','PENDENTE','VENCIDO','DEVOLVIDO','ENTREGA FUTURA'].map((s: string) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Consultor</label>
+          <select className="w-full border rounded px-2 py-2" value={fConsultor} onChange={(e) => setFConsultor(e.target.value)}>
+            <option>Todos</option>
+            {consultores.map((c: string) => <option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Loja</label>
+          <select className="w-full border rounded px-2 py-2" value={fLoja} onChange={(e) => setFLoja(e.target.value)}>
+            <option>Todas</option>
+            {lojas.map((l: string) => <option key={l}>{l}</option>)}
+          </select>
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-xs text-gray-600 mb-1">Busca</label>
+          <input className="w-full border rounded px-3 py-2" placeholder="Nome, consultor, loja..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Ordenar por</label>
+            <select className="w-full border rounded px-2 py-2" value={String(sortBy)} onChange={(e) => setSortBy(e.target.value as keyof RowColab)}>
+              <option value="consultor">Consultor</option>
+              <option value="colaborador">Colaborador</option>
+              <option value="loja">Loja</option>
+              <option value="status_geral">Status Geral</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Direção</label>
+            <select className="w-full border rounded px-2 py-2" value={sortDir} onChange={(e) => setSortDir(e.target.value as 'asc'|'desc')}>
+              <option value="asc">Asc</option>
+              <option value="desc">Desc</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <DataTableG<RowColab>
         title={title}
         columns={columns}
-        rows={rows}
+        rows={filtered}
         striped
         compact
         stickyHeader
         borderType="row"
-        initialSortBy="consultor"
-        initialSortDir="asc"
-        showTotals
-        getTotals={(rows: RowConsultor[]) => {
-          const sum = <K extends keyof RowConsultor>(k: K) =>
-            rows.reduce<number>((acc: number, r: RowConsultor) => acc + Number(r[k] ?? 0), 0)
-
-          const total = sum('total') || (sum('emDia') + sum('pendente') + sum('vencido'))
-          const pct = total ? Number(((sum('emDia') * 100) / total).toFixed(1)) : 0
-
-          return {
-            consultor: 'Totais',
-            emDia: nf.format(sum('emDia')),
-            pendente: nf.format(sum('pendente')),
-            vencido: nf.format(sum('vencido')),
-            total: nf.format(total),
-            pctEmDia: <span style={{ color: pctColor(pct) }}>{pct}%</span>,
-          }
-        }}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        sortDir={sortDir}
+        setSortDir={setSortDir}
       />
-    )
-  }
+    </div>
+  )
+}
 
-  /* =============== VARIAÇÃO: COLABORADORES =============== */
-  if (props.variant === 'colaboradores') {
-    const { rows, lojas, consultores, title = '' } = props
-
-    const [status, setStatus] = useState<'Todos' | Status>('Todos')
-    const [fConsultor, setFConsultor] = useState<string>('Todos')
-    const [fLoja, setFLoja] = useState<string>('Todas')
-    const [busca, setBusca] = useState<string>('')
-    const [sortBy, setSortBy] = useState<keyof RowColab>('consultor')
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-
-    const filtered: RowColab[] = useMemo(() => {
-      const q = busca.trim().toLowerCase()
-      return rows.filter((r: RowColab) => {
-        if (status !== 'Todos' && r.status_geral !== status) return false
-        if (fConsultor !== 'Todos' && r.consultor !== fConsultor) return false
-        if (fLoja !== 'Todas' && r.loja !== fLoja) return false
-        if (!q) return true
-        const hay = `${r.colaborador} ${r.consultor} ${r.loja}`.toLowerCase()
-        return hay.includes(q)
-      })
-    }, [rows, status, fConsultor, fLoja, busca])
-
-    const columns: Column<RowColab>[] = useMemo(() => ([
-      { key: 'consultor',   label: 'Consultor',   sortable: true },
-      { key: 'colaborador', label: 'Colaborador', sortable: true },
-      { key: 'loja',        label: 'Loja',        sortable: true },
-      { key: 'status_geral',label: 'Status Geral',sortable: true, render: (r: RowColab) => <StatusPill status={r.status_geral} /> },
-    ]), [])
-
-    return (
-      <div className="space-y-3">
-        {/* filtros */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Status</label>
-            <select className="w-full border rounded px-2 py-2" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-              {['Todos','EM DIA','PENDENTE','VENCIDO','DEVOLVIDO','ENTREGA FUTURA'].map((s: string) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Consultor</label>
-            <select className="w-full border rounded px-2 py-2" value={fConsultor} onChange={(e) => setFConsultor(e.target.value)}>
-              <option>Todos</option>
-              {consultores.map((c: string) => <option key={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Loja</label>
-            <select className="w-full border rounded px-2 py-2" value={fLoja} onChange={(e) => setFLoja(e.target.value)}>
-              <option>Todas</option>
-              {lojas.map((l: string) => <option key={l}>{l}</option>)}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-gray-600 mb-1">Busca</label>
-            <input className="w-full border rounded px-3 py-2" placeholder="Nome, consultor, loja..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Ordenar por</label>
-              <select className="w-full border rounded px-2 py-2" value={String(sortBy)} onChange={(e) => setSortBy(e.target.value as keyof RowColab)}>
-                <option value="consultor">Consultor</option>
-                <option value="colaborador">Colaborador</option>
-                <option value="loja">Loja</option>
-                <option value="status_geral">Status Geral</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">Direção</label>
-              <select className="w-full border rounded px-2 py-2" value={sortDir} onChange={(e) => setSortDir(e.target.value as 'asc'|'desc')}>
-                <option value="asc">Asc</option>
-                <option value="desc">Desc</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <DataTableG<RowColab>
-          title={title}
-          columns={columns}
-          rows={filtered}
-          striped
-          compact
-          stickyHeader
-          borderType="row"
-          sortBy={sortBy}
-          setSortBy={setSortBy}
-          sortDir={sortDir}
-          setSortDir={setSortDir}
-        />
-      </div>
-    )
-  }
-
-  /* =============== VARIAÇÃO: EPIS =============== */
-  const { rows, title = 'EPIs por Status' } = props
-
+function TabelaEpis({ rows, title = 'EPIs por Status' }: PropsEpis) {
   const columns: Column<RowEpi>[] = useMemo(() => ([
     { key: 'epi',           label: 'EPI',            sortable: true },
     { key: 'devolvido',     label: 'DEVOLVIDO',      align: 'right', sortable: true, render: (r: RowEpi) => nf.format(r.devolvido) },
@@ -601,3 +592,14 @@ export default function TabelaUniversal(props: TabelaUniversalProps) {
     />
   )
 }
+
+export default function TabelaUniversal(props: TabelaUniversalProps) {
+  if (props.variant === 'consultores') {
+    return <TabelaConsultores {...props} />
+  }
+  if (props.variant === 'colaboradores') {
+    return <TabelaColaboradores {...props} />
+  }
+  return <TabelaEpis {...props} />
+}
+

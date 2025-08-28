@@ -148,7 +148,7 @@ export default function SmartBarChart<T extends Record<string, any>>({
             </Bar>
           )}
 
-          // [update] dentro do JSX – MULTI SÉRIES
+          {/* [update] dentro do JSX – MULTI SÉRIES */}
           {multi && series!.map((s, idx) => {
             const mm = s.colorScale ? getMinMax(prepared, s.key as keyof T) : null;
             return (
