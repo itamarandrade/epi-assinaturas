@@ -205,7 +205,7 @@ export default function EpisPage() {
           <section className="bg-white rounded-xl shadow-sm p-3">
             <div className="h-[450px]">
               <SmartBarChart
-                title='Top 10 Lojas com Problemas'
+                title='10 Lojas com Maior Déficit de EPIs'
                 data={topLojas}
                 labelKey="loja"
                 orientation="vertical"

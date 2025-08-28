@@ -267,7 +267,7 @@ export default function ColaboradoresDashboard() {
       sortable: true,
       align: "center",
       render: (r: RowColab) => <StatusChip name={r.statusName} norm={r.statusNorm} />,
-      filterType: 'select',
+      filterType: 'multiselect',
       filterOptions: allStatus.filter(Boolean).map(s => ({ value: s, label: s.replace(/_/g,' ') })),
       getFilterValue: (r) => r.statusNorm,
     },

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { ReactNode, useMemo, useState } from 'react'
+import React, { ReactNode, useMemo, useState, useRef, useEffect } from 'react'
+
 
 /* =========================================================
  * 1) Tabela genérica (DataTableG) + Tipos utilitários
@@ -13,10 +14,9 @@ export type Column<T> = {
   width?: number | string
   sortable?: boolean
   render?: (row: T) => ReactNode,
-  filterType?: 'text' | 'select',
+  filterType?: 'text' | 'select' | 'multiselect',
   filterOptions?: Array<{ value: string; label?: string }> | string[]
   getFilterValue?: (row: T) => string // valor usado na filtragem (se diferente do campo)
-
 }
 
 type BorderType = 'none' | 'row' | 'cell'
@@ -98,56 +98,79 @@ export function DataTableG<T>({
   const [localSortDir, setLocalSortDir] = useState<'asc' | 'desc'>(initialSortDir)
   const [query, setQuery] = useState<string>('')
   const [colFilters, setColFilters] = useState<Record<string, string>>({})
+  const [colMultiFilters, setColMultiFilters] = useState<Record<string, string[]>>({})
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null)
 
   const effectiveSortBy: Extract<keyof T, string> | undefined = sortBy ?? localSortBy
   const effectiveSortDir: 'asc' | 'desc' = sortDir ?? localSortDir
 
-  // filtro de busca
+function useClickOutside(
+  ref: { current: HTMLElement | null },
+  onClose: () => void
+) {
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      const el = ref.current
+      if (!el) return
+      if (!el.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [ref, onClose])
+}
+
   // filtro de busca + filtros por coluna
-const filteredRows: T[] = useMemo(() => {
-  let base = rows;
+  const filteredRows: T[] = useMemo(() => {
+    let base = rows
 
-  // 🔽 aplica filtros por coluna
-  const hasColumnFilters = columns.some(c => c.filterType);
-  if (hasColumnFilters) {
-    base = base.filter((r: T) => {
-      for (const c of columns) {
-        if (!c.filterType) continue;
-        const fv = colFilters[String(c.key)] ?? '';
-        if (!fv) continue; // sem filtro nessa coluna
+    // 🔽 aplica filtros por coluna
+const hasColumnFilters = columns.some(c => c.filterType)
+if (hasColumnFilters) {
+  base = base.filter((r: T) => {
+    for (const c of columns) {
+      if (!c.filterType) continue
+      const key = String(c.key)
+      const rawVal = c.getFilterValue ? c.getFilterValue(r) : (r as any)[c.key]
+      const rawStr = (rawVal ?? '').toString()
+      const text = rawStr.toLowerCase()
 
-        // pega valor textual a comparar
-        const rawVal = c.getFilterValue ? c.getFilterValue(r) : (r as any)[c.key];
-        const text = (rawVal ?? '').toString().toLowerCase();
-        const needle = fv.toLowerCase();
-
-        if (c.filterType === 'select') {
-          if (needle && text !== needle) return false; // igualdade exata
-        } else {
-          if (needle && !text.includes(needle)) return false; // contém
-        }
+      if (c.filterType === 'multiselect') {
+        const selected = colMultiFilters[key] ?? []
+        if (selected.length > 0 && !selected.includes(rawStr)) return false
+        continue
       }
-      return true;
-    });
-  }
 
-  // 🔽 busca global (se habilitada)
-  if (!showSearch || !query.trim()) return base;
-  const q = query.trim().toLowerCase();
-  return base.filter((r: T) =>
-    columns.some((c: Column<T>) => {
-      const val = c.render ? c.render(r) : (r as any)[c.key];
-      const text =
-        typeof val === 'string'
-          ? val
-          : typeof val === 'number'
-          ? String(val)
-          : (val as any)?.toString?.() ?? '';
-      return text.toLowerCase().includes(q);
-    })
-  );
-}, [rows, columns, showSearch, query, colFilters]);
+      const fv = colFilters[key] ?? ''
+      if (!fv) continue
+      const needle = fv.toLowerCase()
 
+      if (c.filterType === 'select') {
+        if (needle && text !== needle) return false
+      } else {
+        if (needle && !text.includes(needle)) return false
+      }
+    }
+    return true
+  })
+}
+
+
+    // 🔽 busca global (se habilitada)
+    if (!showSearch || !query.trim()) return base
+    const q = query.trim().toLowerCase()
+    return base.filter((r: T) =>
+      columns.some((c: Column<T>) => {
+        const val = c.render ? c.render(r) : (r as any)[c.key]
+        const text =
+          typeof val === 'string'
+            ? val
+            : typeof val === 'number'
+            ? String(val)
+            : (val as any)?.toString?.() ?? ''
+        return text.toLowerCase().includes(q)
+      })
+    )
+  }, [rows, columns, showSearch, query, colFilters, colMultiFilters])
 
   // ordenação
   const sortedRows: T[] = useMemo(() => {
@@ -183,19 +206,19 @@ const filteredRows: T[] = useMemo(() => {
       setLocalSortDir(nextDir)
     }
   }
-
+  
   function sortIndicator(col: Column<T>) {
     const active = effectiveSortBy === col.key
     if (!active) return null
     return <span className="ml-1 select-none">{effectiveSortDir === 'asc' ? '▲' : '▼'}</span>
   }
 
-const totalsMap = useMemo<
-  Partial<Record<Extract<keyof T, string>, ReactNode>> | undefined
->(
-  () => (showTotals && getTotals && sortedRows.length > 0 ? getTotals(sortedRows) : undefined),
-  [showTotals, getTotals, sortedRows]
-)
+  const totalsMap = useMemo<
+    Partial<Record<Extract<keyof T, string>, ReactNode>> | undefined
+  >(
+    () => (showTotals && getTotals && sortedRows.length > 0 ? getTotals(sortedRows) : undefined),
+    [showTotals, getTotals, sortedRows]
+  )
 
   return (
     <div className="w-full">
@@ -216,6 +239,7 @@ const totalsMap = useMemo<
       <div className="overflow-auto rounded-md border border-gray-200">
         <table className={cx('w-full text-sm', tableBorder)}>
           <thead className={cx('bg-gray-50', stickyHeader && 'sticky top-0 z-10')}>
+  {/* 1) TÍTULOS + ORDENAR */}
   <tr>
     {columns.map((col: Column<T>) => {
       const thAlign = alignClass[col.align ?? 'left']
@@ -239,14 +263,36 @@ const totalsMap = useMemo<
     })}
   </tr>
 
-  {/* 🔽 Linha de filtros por coluna */}
+  {/* 2) LINHA DE FILTROS (text | select | multiselect dropdown) */}
   {columns.some(c => c.filterType) && (
     <tr>
       {columns.map((col: Column<T>) => {
-        const key = String(col.key);
-        const val = colFilters[key] ?? '';
+        const key = String(col.key)
+        const val = colFilters[key] ?? ''
+        const multiVals = colMultiFilters[key] ?? []
+        const optsRaw = Array.isArray(col.filterOptions) ? col.filterOptions : []
+        const opts = optsRaw.map(o => typeof o === 'string' ? { value: o, label: o } : o)
+
+        const ddRef = useRef<HTMLDivElement>(null)
+        useClickOutside(ddRef, () => setOpenDropdown(prev => (prev === key ? null : prev)))
+
+        const allSelected = opts.length > 0 && multiVals.length === opts.length
+
+        function toggle(v: string) {
+          setColMultiFilters(prev => {
+            const cur = prev[key] ?? []
+            return { ...prev, [key]: cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v] }
+          })
+        }
+        function selectAll() {
+          setColMultiFilters(prev => ({ ...prev, [key]: opts.map(o => o.value) }))
+        }
+        function clearAll() {
+          setColMultiFilters(prev => ({ ...prev, [key]: [] }))
+        }
+
         return (
-          <th key={`filter-${key}`} className="px-3 pb-2">
+          <th key={`filter-${key}`} className="px-3 pb-2 align-top">
             {col.filterType === 'text' && (
               <input
                 className="w-full border rounded px-2 py-1 text-sm"
@@ -255,6 +301,7 @@ const totalsMap = useMemo<
                 onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
               />
             )}
+
             {col.filterType === 'select' && (
               <select
                 className="w-full border rounded px-2 py-1 text-sm"
@@ -262,12 +309,79 @@ const totalsMap = useMemo<
                 onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
               >
                 <option value="">Todos</option>
-                {(Array.isArray(col.filterOptions) ? col.filterOptions : []).map((opt: any) =>
-                  typeof opt === 'string'
-                    ? <option key={opt} value={opt}>{opt}</option>
-                    : <option key={opt.value} value={opt.value}>{opt.label ?? opt.value}</option>
-                )}
+                {opts.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label ?? opt.value}
+                  </option>
+                ))}
               </select>
+            )}
+
+            {col.filterType === 'multiselect' && (
+              <div className="relative" ref={ddRef}>
+                <button
+                  type="button"
+                  className="w-full border rounded px-2 py-1 text-sm flex items-center justify-between"
+                  onClick={() => setOpenDropdown(prev => (prev === key ? null : key))}
+                  aria-haspopup="listbox"
+                  aria-expanded={openDropdown === key}
+                  title="Filtrar (múltiplas opções)"
+                >
+                  <span className="truncate">
+                    {multiVals.length === 0
+                      ? 'Todos'
+                      : multiVals.length === 1
+                        ? (opts.find(o => o.value === multiVals[0])?.label ?? multiVals[0])
+                        : `${multiVals.length} selecionados`}
+                  </span>
+                  <span className="ml-2 text-gray-500">▾</span>
+                </button>
+
+                {openDropdown === key && (
+                  <div
+                    role="listbox"
+                    className="absolute z-20 mt-1 w-64 max-h-64 overflow-auto rounded border border-gray-200 bg-white shadow"
+                  >
+                    <div className="sticky top-0 bg-white border-b border-gray-100 p-2 flex items-center gap-3 text-sm">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={() => (allSelected ? clearAll() : selectAll())}
+                        />
+                        <span>Selecionar todos</span>
+                      </label>
+                      {multiVals.length > 0 && (
+                        <button
+                          type="button"
+                          className="ml-auto text-blue-600 underline"
+                          onClick={clearAll}
+                        >
+                          limpar
+                        </button>
+                      )}
+                    </div>
+
+                    <ul className="p-2 space-y-1">
+                      {opts.map(opt => {
+                        const checked = multiVals.includes(opt.value)
+                        return (
+                          <li key={opt.value}>
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggle(opt.value)}
+                              />
+                              <span className="truncate">{opt.label ?? opt.value}</span>
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
           </th>
         )
@@ -275,6 +389,7 @@ const totalsMap = useMemo<
     </tr>
   )}
 </thead>
+
 
           <tbody className={compact ? 'text-[13px]' : ''}>
             {sortedRows.length > 0 ? (
@@ -450,45 +565,117 @@ function TabelaConsultores({ rows, title = 'Resumo por Consultor' }: PropsConsul
   )
 }
 
+/* ===============================
+ * VARIAÇÃO: COLABORADORES (multi)
+ * =============================== */
+
+// Normaliza qualquer status vindo do banco (EM_DIA -> EM DIA, trims, maiúsculas)
+function normalizeStatus(s: unknown): Status {
+  const txt = String(s ?? '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+  return (txt || '') as Status
+}
+
 function TabelaColaboradores({ rows, lojas, consultores, title = '' }: PropsColaboradores) {
-  const [status, setStatus] = useState<'Todos' | Status>('Todos')
+  // Deriva automaticamente os status disponíveis a partir dos dados (e mantém uma ordem amigável)
+  const AVAILABLE_STATUSES: Status[] = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of rows) set.add(normalizeStatus(r.status_geral))
+    const derived = Array.from(set) as Status[]
+    const desiredOrder: Status[] = ['EM DIA','PENDENTE','VENCIDO','DEVOLVIDO','ENTREGA FUTURA']
+    // ordena pelos conhecidos primeiro, depois os demais
+    const known = derived.filter(d => desiredOrder.includes(d as Status))
+    const unknown = derived.filter(d => !desiredOrder.includes(d as Status)).sort()
+    const ordered = [...desiredOrder.filter(d => known.includes(d)), ...unknown]
+    return ordered.length ? (ordered as Status[]) : desiredOrder
+  }, [rows])
+
+  const [selectedStatuses, setSelectedStatuses] = useState<Status[]>([])
   const [fConsultor, setFConsultor] = useState<string>('Todos')
   const [fLoja, setFLoja] = useState<string>('Todas')
   const [busca, setBusca] = useState<string>('')
   const [sortBy, setSortBy] = useState<keyof RowColab>('consultor')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
+  const allSelected = selectedStatuses.length === AVAILABLE_STATUSES.length
+
+  function toggleStatus(s: Status) {
+    setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+  }
+  function toggleAllStatuses() {
+    setSelectedStatuses(allSelected ? [] : [...AVAILABLE_STATUSES])
+  }
+
   const filtered: RowColab[] = useMemo(() => {
     const q = busca.trim().toLowerCase()
-    return rows.filter((r: RowColab) => {
-      if (status !== 'Todos' && r.status_geral !== status) return false
-      if (fConsultor !== 'Todos' && r.consultor !== fConsultor) return false
-      if (fLoja !== 'Todas' && r.loja !== fLoja) return false
-      if (!q) return true
-      const hay = `${r.colaborador} ${r.consultor} ${r.loja}`.toLowerCase()
-      return hay.includes(q)
-    })
-  }, [rows, status, fConsultor, fLoja, busca])
+    const selectedNorm = new Set(selectedStatuses.map(normalizeStatus))
+    return rows
+      .filter((r: RowColab) => {
+        // ✅ Se nada marcado => todos
+        const st = normalizeStatus(r.status_geral)
+        const statusOk = selectedNorm.size === 0 || selectedNorm.has(st)
+        if (!statusOk) return false
+        if (fConsultor !== 'Todos' && r.consultor !== fConsultor) return false
+        if (fLoja !== 'Todas' && r.loja !== fLoja) return false
+        if (!q) return true
+        const hay = `${r.colaborador} ${r.consultor} ${r.loja}`.toLowerCase()
+        return hay.includes(q)
+      })
+      .sort((a, b) => {
+        const va = (a as any)[sortBy]
+        const vb = (b as any)[sortBy]
+        const cmp = va === vb ? 0 : va > vb ? 1 : -1
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+  }, [rows, selectedStatuses, fConsultor, fLoja, busca, sortBy, sortDir])
 
   const columns: Column<RowColab>[] = useMemo(() => ([
     { key: 'consultor',   label: 'Consultor',   sortable: true },
     { key: 'colaborador', label: 'Colaborador', sortable: true },
     { key: 'loja',        label: 'Loja',        sortable: true },
-    { key: 'status_geral',label: 'Status Geral',sortable: true, render: (r: RowColab) => <StatusPill status={r.status_geral} /> },
+    { key: 'status_geral',label: 'Status Geral',sortable: true, render: (r: RowColab) => <StatusPill status={normalizeStatus(r.status_geral)} /> },
   ]), [])
 
   return (
     <div className="space-y-3">
       {/* filtros */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-        <div>
-          <label className="block text-xs text-gray-600 mb-1">Status</label>
-          <select className="w-full border rounded px-2 py-2" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-            {['Todos','EM DIA','PENDENTE','VENCIDO','DEVOLVIDO','ENTREGA FUTURA'].map((s: string) => (
-              <option key={s} value={s}>{s}</option>
+        {/* ✅ Multiselect por checkboxes (dinâmico) */}
+        <div className="md:col-span-2">
+          <label className="block text-xs text-gray-600 mb-1">Status (marque 1+)</label>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={allSelected} onChange={toggleAllStatuses} />
+              <span>Selecionar todos</span>
+            </label>
+            {selectedStatuses.length > 0 && (
+              <button
+                type="button"
+                className="text-xs underline text-blue-600"
+                onClick={() => setSelectedStatuses([])}
+                title="Limpar seleção"
+              >
+                limpar
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            {AVAILABLE_STATUSES.map((s) => (
+              <label key={s} className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedStatuses.includes(s)}
+                  onChange={() => toggleStatus(s)}
+                />
+                <span>{s}</span>
+              </label>
             ))}
-          </select>
+          </div>
         </div>
+
         <div>
           <label className="block text-xs text-gray-600 mb-1">Consultor</label>
           <select className="w-full border rounded px-2 py-2" value={fConsultor} onChange={(e) => setFConsultor(e.target.value)}>
@@ -496,6 +683,7 @@ function TabelaColaboradores({ rows, lojas, consultores, title = '' }: PropsCola
             {consultores.map((c: string) => <option key={c}>{c}</option>)}
           </select>
         </div>
+
         <div>
           <label className="block text-xs text-gray-600 mb-1">Loja</label>
           <select className="w-full border rounded px-2 py-2" value={fLoja} onChange={(e) => setFLoja(e.target.value)}>
@@ -503,14 +691,26 @@ function TabelaColaboradores({ rows, lojas, consultores, title = '' }: PropsCola
             {lojas.map((l: string) => <option key={l}>{l}</option>)}
           </select>
         </div>
+
         <div className="md:col-span-2">
           <label className="block text-xs text-gray-600 mb-1">Busca</label>
-          <input className="w-full border rounded px-3 py-2" placeholder="Nome, consultor, loja..." value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <input
+            className="w-full border rounded px-3 py-2"
+            placeholder="Nome, consultor, loja..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+
+        {/* ordenação */}
+        <div className="grid grid-cols-2 gap-3 md:col-span-2">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Ordenar por</label>
-            <select className="w-full border rounded px-2 py-2" value={String(sortBy)} onChange={(e) => setSortBy(e.target.value as keyof RowColab)}>
+            <select
+              className="w-full border rounded px-2 py-2"
+              value={String(sortBy)}
+              onChange={(e) => setSortBy(e.target.value as keyof RowColab)}
+            >
               <option value="consultor">Consultor</option>
               <option value="colaborador">Colaborador</option>
               <option value="loja">Loja</option>
@@ -519,7 +719,11 @@ function TabelaColaboradores({ rows, lojas, consultores, title = '' }: PropsCola
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Direção</label>
-            <select className="w-full border rounded px-2 py-2" value={sortDir} onChange={(e) => setSortDir(e.target.value as 'asc'|'desc')}>
+            <select
+              className="w-full border rounded px-2 py-2"
+              value={sortDir}
+              onChange={(e) => setSortDir(e.target.value as 'asc'|'desc')}
+            >
               <option value="asc">Asc</option>
               <option value="desc">Desc</option>
             </select>
@@ -593,13 +797,18 @@ function TabelaEpis({ rows, title = 'EPIs por Status' }: PropsEpis) {
   )
 }
 
-export default function TabelaUniversal(props: TabelaUniversalProps) {
-  if (props.variant === 'consultores') {
-    return <TabelaConsultores {...props} />
-  }
-  if (props.variant === 'colaboradores') {
-    return <TabelaColaboradores {...props} />
-  }
-  return <TabelaEpis {...props} />
+/* =========================
+ * Type guards para narrowing
+ * ========================= */
+function isConsultores(p: TabelaUniversalProps): p is PropsConsultores {
+  return p.variant === 'consultores'
+}
+function isColaboradores(p: TabelaUniversalProps): p is PropsColaboradores {
+  return p.variant === 'colaboradores'
 }
 
+export default function TabelaUniversal(props: TabelaUniversalProps) {
+  if (isConsultores(props)) return <TabelaConsultores {...props} />
+  if (isColaboradores(props)) return <TabelaColaboradores {...props} />
+  return <TabelaEpis {...props} />
+}
