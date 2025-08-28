@@ -220,6 +220,127 @@ if (hasColumnFilters) {
     [showTotals, getTotals, sortedRows]
   )
 
+  function FilterCell({ col }: { col: Column<T> }) {
+    const key = String(col.key)
+    const val = colFilters[key] ?? ''
+    const multiVals = colMultiFilters[key] ?? []
+    const optsRaw = Array.isArray(col.filterOptions) ? col.filterOptions : []
+    const opts = optsRaw.map(o => (typeof o === 'string' ? { value: o, label: o } : o))
+
+    const ddRef = useRef<HTMLDivElement>(null)
+    useClickOutside(ddRef, () => setOpenDropdown(prev => (prev === key ? null : prev)))
+
+    const allSelected = opts.length > 0 && multiVals.length === opts.length
+
+    function toggle(v: string) {
+      setColMultiFilters(prev => {
+        const cur = prev[key] ?? []
+        return { ...prev, [key]: cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v] }
+      })
+    }
+    function selectAll() {
+      setColMultiFilters(prev => ({ ...prev, [key]: opts.map(o => o.value) }))
+    }
+    function clearAll() {
+      setColMultiFilters(prev => ({ ...prev, [key]: [] }))
+    }
+
+    return (
+      <th className="px-3 pb-2 align-top">
+        {col.filterType === 'text' && (
+          <input
+            className="w-full border rounded px-2 py-1 text-sm"
+            placeholder="Filtrar…"
+            value={val}
+            onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
+          />
+        )}
+
+        {col.filterType === 'select' && (
+          <select
+            className="w-full border rounded px-2 py-1 text-sm"
+            value={val}
+            onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
+          >
+            <option value="">Todos</option>
+            {opts.map(opt => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label ?? opt.value}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {col.filterType === 'multiselect' && (
+          <div className="relative" ref={ddRef}>
+            <button
+              type="button"
+              className="w-full border rounded px-2 py-1 text-sm flex items-center justify-between"
+              onClick={() => setOpenDropdown(prev => (prev === key ? null : key))}
+              aria-haspopup="listbox"
+              aria-expanded={openDropdown === key}
+              title="Filtrar (múltiplas opções)"
+            >
+              <span className="truncate">
+                {multiVals.length === 0
+                  ? 'Todos'
+                  : multiVals.length === 1
+                  ? opts.find(o => o.value === multiVals[0])?.label ?? multiVals[0]
+                  : `${multiVals.length} selecionados`}
+              </span>
+              <span className="ml-2 text-gray-500">▾</span>
+            </button>
+
+            {openDropdown === key && (
+              <div
+                role="listbox"
+                className="absolute z-20 mt-1 w-64 max-h-64 overflow-auto rounded border border-gray-200 bg-white shadow"
+              >
+                <div className="sticky top-0 bg-white border-b border-gray-100 p-2 flex items-center gap-3 text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={() => (allSelected ? clearAll() : selectAll())}
+                    />
+                    <span>Selecionar todos</span>
+                  </label>
+                  {multiVals.length > 0 && (
+                    <button
+                      type="button"
+                      className="ml-auto text-blue-600 underline"
+                      onClick={clearAll}
+                    >
+                      limpar
+                    </button>
+                  )}
+                </div>
+
+                <ul className="p-2 space-y-1">
+                  {opts.map(opt => {
+                    const checked = multiVals.includes(opt.value)
+                    return (
+                      <li key={opt.value}>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(opt.value)}
+                          />
+                          <span className="truncate">{opt.label ?? opt.value}</span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </th>
+    )
+  }
+
   return (
     <div className="w-full">
       {(title || showSearch) && (
@@ -266,126 +387,9 @@ if (hasColumnFilters) {
   {/* 2) LINHA DE FILTROS (text | select | multiselect dropdown) */}
   {columns.some(c => c.filterType) && (
     <tr>
-      {columns.map((col: Column<T>) => {
-        const key = String(col.key)
-        const val = colFilters[key] ?? ''
-        const multiVals = colMultiFilters[key] ?? []
-        const optsRaw = Array.isArray(col.filterOptions) ? col.filterOptions : []
-        const opts = optsRaw.map(o => typeof o === 'string' ? { value: o, label: o } : o)
-
-        const ddRef = useRef<HTMLDivElement>(null)
-        useClickOutside(ddRef, () => setOpenDropdown(prev => (prev === key ? null : prev)))
-
-        const allSelected = opts.length > 0 && multiVals.length === opts.length
-
-        function toggle(v: string) {
-          setColMultiFilters(prev => {
-            const cur = prev[key] ?? []
-            return { ...prev, [key]: cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v] }
-          })
-        }
-        function selectAll() {
-          setColMultiFilters(prev => ({ ...prev, [key]: opts.map(o => o.value) }))
-        }
-        function clearAll() {
-          setColMultiFilters(prev => ({ ...prev, [key]: [] }))
-        }
-
-        return (
-          <th key={`filter-${key}`} className="px-3 pb-2 align-top">
-            {col.filterType === 'text' && (
-              <input
-                className="w-full border rounded px-2 py-1 text-sm"
-                placeholder="Filtrar…"
-                value={val}
-                onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
-              />
-            )}
-
-            {col.filterType === 'select' && (
-              <select
-                className="w-full border rounded px-2 py-1 text-sm"
-                value={val}
-                onChange={e => setColFilters(f => ({ ...f, [key]: e.target.value }))}
-              >
-                <option value="">Todos</option>
-                {opts.map(opt => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label ?? opt.value}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {col.filterType === 'multiselect' && (
-              <div className="relative" ref={ddRef}>
-                <button
-                  type="button"
-                  className="w-full border rounded px-2 py-1 text-sm flex items-center justify-between"
-                  onClick={() => setOpenDropdown(prev => (prev === key ? null : key))}
-                  aria-haspopup="listbox"
-                  aria-expanded={openDropdown === key}
-                  title="Filtrar (múltiplas opções)"
-                >
-                  <span className="truncate">
-                    {multiVals.length === 0
-                      ? 'Todos'
-                      : multiVals.length === 1
-                        ? (opts.find(o => o.value === multiVals[0])?.label ?? multiVals[0])
-                        : `${multiVals.length} selecionados`}
-                  </span>
-                  <span className="ml-2 text-gray-500">▾</span>
-                </button>
-
-                {openDropdown === key && (
-                  <div
-                    role="listbox"
-                    className="absolute z-20 mt-1 w-64 max-h-64 overflow-auto rounded border border-gray-200 bg-white shadow"
-                  >
-                    <div className="sticky top-0 bg-white border-b border-gray-100 p-2 flex items-center gap-3 text-sm">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={() => (allSelected ? clearAll() : selectAll())}
-                        />
-                        <span>Selecionar todos</span>
-                      </label>
-                      {multiVals.length > 0 && (
-                        <button
-                          type="button"
-                          className="ml-auto text-blue-600 underline"
-                          onClick={clearAll}
-                        >
-                          limpar
-                        </button>
-                      )}
-                    </div>
-
-                    <ul className="p-2 space-y-1">
-                      {opts.map(opt => {
-                        const checked = multiVals.includes(opt.value)
-                        return (
-                          <li key={opt.value}>
-                            <label className="flex items-center gap-2 text-sm cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggle(opt.value)}
-                              />
-                              <span className="truncate">{opt.label ?? opt.value}</span>
-                            </label>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </th>
-        )
-      })}
+      {columns.map((col: Column<T>) => (
+        <FilterCell key={`filter-${String(col.key)}`} col={col} />
+      ))}
     </tr>
   )}
 </thead>
